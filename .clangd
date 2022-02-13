@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [-xc, -Wall] # Treat header files as c headers

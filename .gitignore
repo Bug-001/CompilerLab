@@ -1,0 +1,4 @@
+lex.yy.c
+syntax.tab.*
+*.o
+*.output
