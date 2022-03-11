@@ -3,3 +3,9 @@ syntax.tab.*
 *.o
 *.output
 compile_commands.json
+parser
+苏海涛-191850169
+苏海涛-191850169.zip
+*.cmm
+!test1.cmm
+!test2.cmm
