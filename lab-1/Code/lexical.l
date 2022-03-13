@@ -4,13 +4,20 @@
   #include "syntax.tab.h"
 
   extern int has_error;
+  enum yytokentype repeat = YYEMPTY;
 
   int yycolumn = 1;
   #define YY_USER_ACTION                              \
     yylloc.first_line = yylloc.last_line = yylineno;  \
     yylloc.first_column = yycolumn;                   \
     yylloc.last_column = yycolumn + yyleng - 1;       \
-    yycolumn += yyleng;
+    yycolumn += yyleng;                               \
+    if (repeat != YYEMPTY) {                          \
+      enum yytokentype tmp = repeat;                  \
+      repeat = YYEMPTY;                               \
+      return tmp;                                     \
+    }
+
 
   #ifdef LEXICAL_DEBUG
     #define yield(lex)          \
@@ -98,7 +105,13 @@ comment         \/\*([^*]|(\*+[^*\/]))*\*+\/|\/\/.*
 "{"         { gen_lexical_node_and_yield(LC); }
 "}"         { gen_lexical_node_and_yield(RC); }
 "/*"        { ++has_error; char c; while ((c = input())); 
-              printf("Error type A at Line %d: unterminated comment.\n", yylineno, yytext); }
+#ifdef L1_HARD
+              printf("Error Type A at Line %d\n", yylineno, yytext);
+#else
+              printf("Error type A at Line %d: unterminated comment.\n", yylineno, yytext);
+#endif
+            }
+
 \n          { 
   yycolumn = 1;
 #ifdef LEXICAL_DEBUG
@@ -107,6 +120,10 @@ comment         \/\*([^*]|(\*+[^*\/]))*\*+\/|\/\/.*
 }
 [ \n\t\r]   { }
 .           { ++has_error;
-              printf("Error type A at Line %d: unrecognized input `%s`.\n", yylineno, yytext); }
-
+#ifdef L1_HARD
+              printf("Error Type A at Line %d\n", yylineno);
+#else
+              printf("Error type A at Line %d: unrecognized input `%s`.\n", yylineno, yytext);
+#endif
+            }
 %%

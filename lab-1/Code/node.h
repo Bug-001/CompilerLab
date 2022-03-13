@@ -1,5 +1,5 @@
-#define LEXICAL_DEBUG
-#define SYNTAX_DEBUG
+// #define LEXICAL_DEBUG
+// #define SYNTAX_DEBUG
 // #define L1_HARD
 
 enum node_type {
