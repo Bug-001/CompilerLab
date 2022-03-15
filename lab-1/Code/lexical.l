@@ -4,7 +4,7 @@
   #include "syntax.tab.h"
 
   extern int has_error;
-  enum yytokentype repeat = YYEMPTY;
+  enum yytokentype repeat = -1;
 
   int yycolumn = 1;
   #define YY_USER_ACTION                              \
@@ -12,9 +12,9 @@
     yylloc.first_column = yycolumn;                   \
     yylloc.last_column = yycolumn + yyleng - 1;       \
     yycolumn += yyleng;                               \
-    if (repeat != YYEMPTY) {                          \
+    if (repeat != -1) {                               \
       enum yytokentype tmp = repeat;                  \
-      repeat = YYEMPTY;                               \
+      repeat = -1;                                    \
       return tmp;                                     \
     }
 
@@ -106,9 +106,9 @@ comment         \/\*([^*]|(\*+[^*\/]))*\*+\/|\/\/.*
 "}"         { gen_lexical_node_and_yield(RC); }
 "/*"        { ++has_error; char c; while ((c = input())); 
 #ifdef L1_HARD
-              printf("Error Type A at Line %d\n", yylineno, yytext);
+              printf("Error Type A at Line %d\n", yylineno);
 #else
-              printf("Error type A at Line %d: unterminated comment.\n", yylineno, yytext);
+              printf("Error type A at Line %d: unterminated comment.\n", yylineno);
 #endif
             }
 
