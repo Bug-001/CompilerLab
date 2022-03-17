@@ -1,6 +1,4 @@
-// #define LEXICAL_DEBUG
-// #define SYNTAX_DEBUG
-// #define L1_HARD
+#include "config.h"
 
 enum node_type {
   LEXICAL,
