@@ -4,8 +4,9 @@ syntax.tab.*
 *.output
 compile_commands.json
 parser
-苏海涛-191850169
-苏海涛-191850169.zip
+苏海涛_191850169
+苏海涛_191850169.zip
+report.pdf
 *.cmm
 !test1.cmm
 !test2.cmm

@@ -1,0 +1,9 @@
+# 编译原理Lab-1
+
+```shell
+cd Code
+make
+./parser ../Test/test1.cmm
+```
+
+实验报告参见[report.md](Resource/report.md)。
