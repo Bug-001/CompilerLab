@@ -33,6 +33,7 @@
 %left  PLUS MINUS
 %left  STAR DIV
 %right NEG NOT
+%nonassoc NORPRB
 %nonassoc LP RP LB RB DOT
 
 %%
@@ -45,7 +46,7 @@ ExtDefList : ExtDef ExtDefList  { $$ = gen_tree("ExtDefList", @$.first_line, 2, 
   ;
 ExtDef : Specifier ExtDecList SEMI  { $$ = gen_tree("ExtDef", @$.first_line, 3, $1, $2, $3); }
   | Specifier SEMI                  { $$ = gen_tree("ExtDef", @$.first_line, 2, $1, $2); }
-  | error SEMI                      { error_end("ExtDef -> error SEMI"); }
+  | error SEMI                      { error_end("ExtDef -> error SEMI"); yyerrok; }
   | Specifier FunDec CompSt         { $$ = gen_tree("ExtDef", @$.first_line, 3, $1, $2, $3); }
   ;
 ExtDecList : VarDec           { $$ = gen_tree("ExtDecList", @$.first_line, 1, $1); }
@@ -69,11 +70,11 @@ Tag : ID    { $$ = gen_tree("Tag", @$.first_line, 1, $1); }
 /* Declarators */
 VarDec : ID                           { $$ = gen_tree("VarDec", @$.first_line, 1, $1); }
   | error COMMA                       { error_end("VarDec -> error [COMMA]"); repeat = COMMA; }
-  | error SEMI                        { error_end("VarDec -> error [SEMI]"); repeat = SEMI; }
+  | error SEMI                        { error_end("VarDec -> error [SEMI]"); repeat = SEMI; yyerrok; }
   | VarDec LB INT RB                  { $$ = gen_tree("VarDec", @$.first_line, 4, $1, $2, $3, $4); }
   | VarDec LB error RB                { error_end("VarDec -> VarDec LB error RB"); }
   | VarDec LB error COMMA             { error_end("VarDec -> VarDec LB error [COMMA]"); repeat = COMMA; }
-  | VarDec LB error SEMI              { error_end("VarDec -> VarDec LB error [SEMI]"); repeat = SEMI; }
+  | VarDec LB error SEMI              { error_end("VarDec -> VarDec LB error [SEMI]"); repeat = SEMI; yyerrok; }
   ;
 FunDec : ID LP VarList RP   { $$ = gen_tree("FunDec", @$.first_line, 4, $1, $2, $3, $4); }
   /* | ID LP error RP          { error_end("FunDec -> ID LP error RP"); } */
@@ -92,7 +93,7 @@ VarList : ParamDec COMMA VarList  { $$ = gen_tree("VarList", @$.first_line, 3, $
   ;
 ParamDec : Specifier VarDec   { $$ = gen_tree("ParamDec", @$.first_line, 2, $1, $2); }
   | error COMMA               { error_end("ParamDec -> error [COMMA]"); repeat = COMMA;}
-  | error RP                  { error_end("ParamDec -> error [RP]"); repeat = RP; }
+  /* | error RP                  { error_end("ParamDec -> error [RP]"); repeat = RP; } */
   ;
 /* Statements */
 CompSt : LC DefList StmtList RC   { $$ = gen_tree("CompSt", @$.first_line, 4, $1, $2, $3, $4); }
@@ -107,7 +108,7 @@ Stmt : Exp SEMI                     { $$ = gen_tree("Stmt", @$.first_line, 2, $1
   /* | error SEMI                      { error_end("Stmt -> error SEMI"); yyerrok; } */
   | CompSt                          { $$ = gen_tree("Stmt", @$.first_line, 1, $1); }
   | RETURN Exp SEMI                 { $$ = gen_tree("Stmt", @$.first_line, 3, $1, $2, $3); }
-  | RETURN error SEMI               { error_end("Stmt -> RETURN error SEMI"); }
+  | RETURN error SEMI               { error_end("Stmt -> RETURN error SEMI"); yyerrok; }
   | IF LP Exp RP Stmt %prec LTE     { $$ = gen_tree("Stmt", @$.first_line, 5, $1, $2, $3, $4, $5); }
   | IF LP error RP Stmt %prec LTE   { error_end("Stmt -> IF LP error RP Stmt"); }
   | IF LP error Stmt %prec LTE      { error_end("Stmt -> IF LP error Stmt"); }
@@ -116,7 +117,7 @@ Stmt : Exp SEMI                     { $$ = gen_tree("Stmt", @$.first_line, 2, $1
   | IF LP error Stmt ELSE Stmt      { error_end("Stmt -> IF LP Exp error Stmt ELSE Stmt"); }
   | WHILE LP Exp RP Stmt            { $$ = gen_tree("Stmt", @$.first_line, 5, $1, $2, $3, $4, $5); }
   | WHILE LP error RP Stmt          { error_end("Stmt -> WHILE LP error RP Stmt"); }
-  /* | WHILE LP error Stmt             { error_end("Stmt -> WHILE LP error Stmt"); } */
+  | WHILE LP error Stmt             { error_end("Stmt -> WHILE LP error Stmt"); }
   ;
 /* Local Definitions */
 DefList : Def DefList   { $$ = gen_tree("DefList", @$.first_line, 2, $1, $2); }
@@ -124,7 +125,7 @@ DefList : Def DefList   { $$ = gen_tree("DefList", @$.first_line, 2, $1, $2); }
   /* | error DefList       { error_end("DefList -> error DefList"); } */
   ;
 Def : Specifier DecList SEMI  { $$ = gen_tree("Def", @$.first_line, 3, $1, $2, $3); }
-  | Specifier error SEMI      { error_end("Def -> Specifier error SEMI"); }
+  | Specifier error SEMI      { error_end("Def -> Specifier error SEMI"); yyerrok; }
   /* | error DecList SEMI        { error_end("Def -> error DecList SEMI"); } */
   | error SEMI                { error_end("Def -> error SEMI"); yyerrok; }
   ;
@@ -140,40 +141,24 @@ Dec : VarDec              { $$ = gen_tree("Dec", @$.first_line, 1, $1); }
   ;
 /* Expressions */
 Exp : Exp ASSIGNOP Exp          { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp ASSIGNOP                { yyerror("Expected expression"); YYERROR; } */
   | Exp AND Exp                 { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp AND                     { yyerror("Expected expression"); YYERROR; } */
-  /* | AND Exp                     { yyerror("Expected expression"); YYERROR; } */
   | Exp OR Exp                  { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp OR                      { yyerror("Expected expression"); YYERROR; } */
-  /* | OR Exp                      { yyerror("Expected expression"); YYERROR; } */
   | Exp RELOP Exp               { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp RELOP                   { yyerror("Expected expression"); YYERROR; } */
-  /* | RELOP Exp                   { yyerror("Expected expression"); YYERROR; } */
-  /* | error RELOP Exp       { error_end("Exp -> error RELOP Exp"); } */
   | Exp PLUS Exp                { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp PLUS                    { yyerror("Expected expression"); YYERROR; } */
-  /* | error PLUS Exp        { error_end("Exp -> error PLUS Exp"); } */
   | Exp MINUS Exp               { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp MINUS                   { yyerror("Expected expression"); YYERROR; } */
-  /* | error MINUS Exp       { error_end("Exp -> error MINUS Exp"); } */
   | Exp STAR Exp                { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp STAR                    { yyerror("Expected expression"); YYERROR; } */
-  /* | error STAR Exp        { error_end("Exp -> error STAR Exp"); } */
   | Exp DIV Exp                 { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | Exp DIV                     { yyerror("Expected expression"); YYERROR; } */
-  /* | error DIV Exp         { error_end("Exp -> error DIV Exp"); } */
   | LP Exp RP                   { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  /* | LP error RP           { error_end("Exp -> LP error RP"); } */
-  /* | LP error              { error_end("Exp -> LP error"); } */
   | MINUS Exp %prec NEG         { $$ = gen_tree("Exp", @$.first_line, 2, $1, $2); }
   | NOT Exp                     { $$ = gen_tree("Exp", @$.first_line, 2, $1, $2); }
   | ID LP Args RP               { $$ = gen_tree("Exp", @$.first_line, 4, $1, $2, $3, $4); }
   | ID LP error RP              { error_end("Exp -> ID LP error RP"); }
+  | ID LP error %prec NORPRB    { error_end("Exp -> ID LP error"); }
   | ID LP RP                    { $$ = gen_tree("Exp", @$.first_line, 3, $1, $2, $3); }
-  | ID LP error SEMI            { error_end("Exp -> ID LP error [SEMI]"); repeat = SEMI; }
-  /* | ID LP error %prec NORPRB    { error_end("Exp -> ID LP error"); } */
+  /* | ID LP error SEMI            { error_end("Exp -> ID LP error [SEMI]"); repeat = SEMI; } */
   | Exp LB Exp RB               { $$ = gen_tree("Exp", @$.first_line, 4, $1, $2, $3, $4); }
+  | Exp LB error RB             { error_end("Exp -> Exp LB error RB"); }
+  | Exp LB error %prec NORPRB   { error_end("Exp -> Exp LB error"); }
   /* | error LB Exp RB       { error_end("Exp -> error LB Exp RB"); } */
   /* | Exp LB error RB             { error_end("Exp -> Exp LB error RB"); } */
   /* | Exp LB error %prec NORPRB   { error_end("Exp -> Exp LB error"); } */
