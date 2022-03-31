@@ -1,0 +1,10 @@
+struct A {
+	int b;
+	int d;
+};
+
+int main()
+{
+	int i = 0123;
+	int j = 0x33;
+}
