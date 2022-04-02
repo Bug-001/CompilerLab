@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
   if (has_error)
     goto error_out;
 
+  free_node(tree);
   return 0;
 
 terminated:

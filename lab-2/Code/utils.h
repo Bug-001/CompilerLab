@@ -5,5 +5,4 @@
 	void *__mptr = (void *)(ptr);					\
 	((type *)(__mptr - (void *)&((type *)0)->member)); })
 
-
 #endif

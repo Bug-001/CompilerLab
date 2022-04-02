@@ -1,14 +1,9 @@
 #ifndef SEMANTIC_H
 #define SEMANTIC_H
 
-struct node;
-
-struct value {
-  union {
-    int i_val;
-    float f_val;
-  };
-};
+#include "exp.h"
+#include "rbtree.h"
+#include <stdbool.h>
 
 enum relop_type {
   GT,
@@ -28,7 +23,14 @@ struct lexical_attr {
 };
 
 struct syntax_attr {
-  int dummy;
+  enum exp_type type;
+  struct node* parent;
+  union {
+    struct symbol* sym;
+    struct field_access* field;
+    struct array_access* array;
+    struct expression* exp;
+  };
 };
 
 void semantic_analysis(struct node* tree);
