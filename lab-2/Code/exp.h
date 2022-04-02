@@ -45,4 +45,14 @@ struct expression {
   struct value val;
 };
 
+struct symbol* search_symbol(const char* id);
+
+struct symbol* search_symbol_within_compst(const char* id);
+
+struct symbol* insert_new_symbol(const char* id, struct type* type);
+
+void push_symbol_table();
+
+void pop_symbol_table();
+
 #endif

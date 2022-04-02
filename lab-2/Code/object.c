@@ -16,6 +16,11 @@ void* __alloc_object(int _size, const char* id) {
     return obj;
 }
 
+void* __get_object(void* _obj) {
+    ((struct object*) _obj)->ref_count += 1;
+    return _obj;
+}
+
 void put_object(void* _obj) {
     struct object* obj = (struct object*) _obj;
     if (obj->ref_count > 0) {
@@ -64,6 +69,11 @@ bool insert_object(struct rb_root* root, void* _obj) {
     rb_insert_color(&obj->node, root);
 
     return true;
+}
+
+void erase_object(void* del, struct rb_root* root) {
+    struct object* obj = (struct object*) del;
+    rb_erase(&obj->node, root);
 }
 
 /* To test rbtree code with following code, build with
