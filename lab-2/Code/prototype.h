@@ -23,7 +23,6 @@ enum var_list_kind {
 /* Inherited from struct object */
 struct var_list {
   struct object obj;
-  struct rb_node rb_node;
   enum var_list_kind kind;
   struct type* type;
   union {
@@ -59,7 +58,21 @@ struct func {
   bool is_declared;
   bool is_defined;
   struct type* ret_type;
+  /* args is reversed */
   struct var_list* args;
 };
+
+struct type* alloc_type(const char* id);
+bool insert_type(struct type* type);
+struct type* search_type(const char* id);
+
+struct func* alloc_func(const char* id);
+struct func* search_func(const char* id);
+bool insert_func(struct func* func);
+
+struct var_list* alloc_var(const char* id);
+bool search_field(const char* id);
+bool insert_struct_field(struct var_list* field, struct type* type);
+bool insert_func_args(struct var_list* arg, struct func* func);
 
 #endif

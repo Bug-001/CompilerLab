@@ -9,27 +9,16 @@ void* __alloc_object(int _size, const char* id) {
         return NULL;
     struct object* obj = (struct object*) malloc(_size);
     memset(obj, 0, _size);
-    obj->ref_count = 1;
     obj->id = (char*) malloc(strlen(id) + 1);
     strcpy(obj->id, id);
 
     return obj;
 }
 
-void* __get_object(void* _obj) {
-    ((struct object*) _obj)->ref_count += 1;
-    return _obj;
-}
-
-void put_object(void* _obj) {
+void free_object(void* _obj) {
     struct object* obj = (struct object*) _obj;
-    if (obj->ref_count > 0) {
-        obj->ref_count -= 1;
-    }
-    if (obj->ref_count == 0) {
-        free(obj->id);
-        obj->id = NULL;
-    }
+    free(obj->id);
+    free(obj);
 }
 
 void* search_object(struct rb_root* root, const char* str) {
@@ -101,7 +90,7 @@ void erase_object(void* del, struct rb_root* root) {
 //     }
 
 //     INIT_OBJECT(struct derived, d, "special");
-//     struct derived ref = get_object(struct derived, d);
+//     struct derived ref = d;
 
 //     assert(insert_object(&mytree, d) == true);
 //     assert(insert_object(&mytree, ref) == false);
@@ -110,10 +99,7 @@ void erase_object(void* del, struct rb_root* root) {
 //     assert(search_object(&mytree, "111111112") == NULL);
 //     printf("%p", search_object(&mytree, "1111111111"));
 
-//     put_object(ref);
-//     put_object(d);
-
 //     for (int i = 0; i < 128; ++i) {
-//         put_object(arr[i]);
+//         free_object(arr[i]);
 //     }
 // }

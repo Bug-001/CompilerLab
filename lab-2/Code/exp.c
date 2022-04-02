@@ -35,18 +35,9 @@ struct symbol* insert_new_symbol(const char* id, struct type* type) {
     INIT_OBJECT(struct symbol, sym, id);
     if (!sym)
         return NULL;
-    sym->type = get_object(struct type, type);
+    sym->type = type;
     insert_object(&cur_table->table, sym);
     return sym;
-}
-
-/* sym should be in cur_table. */
-static void erase_symbol(struct symbol* sym) {
-    put_object(sym);
-    if (sym->obj.ref_count == 0) {
-        put_object(sym->type);
-    }
-    erase_object(sym, &cur_table->table);
 }
 
 void push_symbol_table() {
@@ -66,7 +57,8 @@ void pop_symbol_table() {
     for (node = rb_first(root); node; ) {
         tmp = rb_next(node);
         del = container_of(node, struct symbol, obj.node);
-        erase_symbol(del);
+        erase_object(del, root);
+        free_object(del);
         node = tmp;
     }
     struct symbol_table* del_table = cur_table;

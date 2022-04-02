@@ -6,15 +6,12 @@
 struct object {
     struct rb_node node;
 	char* id;
-	int ref_count;
 };
 
 /* id must NOT be NULL */
 void* __alloc_object(int _size, const char* id);
 
-void* __get_object(void* _obj);
-
-void put_object(void* _obj);
+void free_object(void* _obj);
 
 void* search_object(struct rb_root* root, const char* str);
 
@@ -27,8 +24,5 @@ void erase_object(void* del, struct rb_root* root);
 
 #define alloc_object(type, id)          \
     (type*)__alloc_object(sizeof(type), id)
-
-#define get_object(type, ref)           \
-    (type*)__get_object(ref)
 
 #endif
