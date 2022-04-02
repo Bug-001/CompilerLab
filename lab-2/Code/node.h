@@ -1,38 +1,62 @@
 #ifndef NODE_H
 #define NODE_H
 
-#include "config.h"
+#include "semantic.h"
 
-enum node_type {
-  LEXICAL,
-  SYNTAX
+/* syntax types */
+enum syntax_type {
+  PROGRAM = 1,
+  EXT_DEF_LIST,
+  EXT_DEF,
+  EXT_DEC_LIST,
+  SPECIFIER,
+  STRUCT_SPECIFIER,
+  OPT_TAG,
+  TAG,
+  VAR_DEC,
+  FUN_DEC,
+  VAR_LIST,
+  PARAM_DEC,
+  COMP_ST,
+  STMT_LIST,
+  STMT,
+  DEF_LIST,
+  DEF,
+  DEC_LIST,
+  DEC,
+  EXP,
+  ARGS,
+
+  NR_SYNTAX_TYPES
 };
 
+#define is_lex(type) ((type) > NR_SYNTAX_TYPES ? 1 : 0)
+#define is_syn(type) (!is_lex(type))
+
 struct node {
-  const char* name;// all name strings are literal
-  enum node_type type;
+  const char* name;
+  int ntype;
   unsigned lineno;
-  char* info;// all info strings are allocated in heap
+  /* lexical attribute or syntax attribute */
   union {
-    unsigned i_val;
-    float f_val;
+    struct lexical_attr lattr;
+    struct syntax_attr* p_sattr;
   };
 
-  struct node* child;
-  struct node* sibling;
+  struct node* parent;
+  int nr_children;
+  struct node** children;
 };
 
 extern struct node* tree;
 
-struct node* gen_tree(const char* name, unsigned lineno, int num, ...);
+struct node* alloc_node(const char* const name, int ntype, unsigned lineno, int nr_children);
 
-struct node* new_node(const char* name, enum node_type type, unsigned lineno, char* info);
+void free_node(struct node* root);
 
-#define new_lexical_node(name, info) \
-  new_node(name, LEXICAL, 0, info)
+struct node* gen_tree(const char* const name, int ntype, unsigned lineno, int nr_children, ...);
 
-#define new_syntax_node(name, lineno) \
-  new_node(name, SYNTAX, lineno, "unused")
+struct node* new_lexical_node(const char* const name, int ntype, unsigned lineno, const char* info);
 
 void print_node(struct node* p);
 

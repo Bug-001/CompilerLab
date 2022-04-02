@@ -1,4 +1,6 @@
 #include "node.h"
+#include "config.h"
+#include "syntax.tab.h"
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -7,39 +9,104 @@
 
 struct node* tree = NULL;
 
-struct node* gen_tree(const char* name, unsigned lineno, int num, ...) {
-  struct node* root = new_syntax_node(name, lineno);
-  if (num == 0)
+struct node* alloc_node(const char* const name, int ntype, unsigned lineno, int nr_children) {
+  struct node* node = (struct node*) malloc(sizeof(struct node));
+  /* set basic node fields */
+  memset(node, 0, sizeof(struct node));
+  node->ntype = ntype;
+  node->lineno = lineno;
+  node->name = name;
+  /* set children */
+  if (nr_children) {
+    node->nr_children = nr_children;
+    node->children = (struct node**) malloc(sizeof(struct node*) * nr_children);
+  }
+  return node;
+}
+
+void free_node(struct node* root) {
+  if (!root) return;
+  /* free lattr or sattr */
+  if (is_lex(root->ntype)) {
+    free(root->lattr.info);
+  } else {
+    /* TODO: free_sattr() */;
+  }
+  /* free children */
+  for (int i = 0; i < root->nr_children; ++i) {
+    free_node(root->children[i]);
+  }
+  free(root->children);
+  /* free itself */
+  free(root);
+}
+
+struct node* gen_tree(const char* const name, int ntype, unsigned lineno, int nr_children, ...) {
+  struct node* root = alloc_node(name, ntype, lineno, nr_children);
+  if (nr_children == 0)
     return root;
+  /* set children */
   va_list valist;
-  va_start(valist, num);
-  root->child = va_arg(valist, struct node*);
-  struct node* p_children = root->child;
-  for (int i = 1; i < num; ++i) {
-    p_children->sibling = va_arg(valist, struct node*);
-    p_children = p_children->sibling;
+  va_start(valist, nr_children);
+  for (int i = 0; i < nr_children; ++i) {
+    root->children[i] = va_arg(valist, struct node*);
+    root->children[i]->parent = root;
   }
   va_end(valist);
   return root;
 }
 
-struct node* new_node(const char* name, enum node_type type, unsigned lineno, char* info) {
-  struct node* root = (struct node*) malloc(sizeof(struct node));
-  root->name = name;
-  root->type = type;
-  root->lineno = lineno;
-  root->info = info;
-  root->child = NULL;
-  root->sibling = NULL;
-  return root;
+struct node* new_lexical_node(const char* const name, int ntype, unsigned lineno, const char* info) {
+  struct node* node = alloc_node(name, ntype, lineno, 0);
+
+  /* set node->lattr */
+  switch (ntype) {
+    case INT:
+      if (info[0] == '0' && (info[1] == 'x' || info[1] == 'X'))
+        sscanf(info, "%x", &node->lattr.value.i_val);
+      else if (info[0] == '0')
+        sscanf(info, "%o", &node->lattr.value.i_val);
+      else
+        sscanf(info, "%d", &node->lattr.value.i_val);
+      break;
+    case FLOAT:
+      node->lattr.value.f_val = atof(info);
+      node->lattr.info = (char*) malloc(strlen(info) + 1);
+      strcpy(node->lattr.info, info);
+      break;
+    case RELOP:
+      if (info[0] == '>') {
+        if (info[1] == '=')
+          node->lattr.relop_type = GE;
+        else
+          node->lattr.relop_type = GT;
+      } else if (info[0] == '<') {
+        if (info[1] == '=')
+          node->lattr.relop_type = LE;
+        else
+          node->lattr.relop_type = LT;
+      } else if (info[0] == '=') {
+        node->lattr.relop_type = EQ;
+      } else {
+        node->lattr.relop_type = NE;
+      }
+      break;
+    case ID:
+    case TYPE:
+      node->lattr.info = (char*) malloc(strlen(info) + 1);
+      strcpy(node->lattr.info, info);
+      break;
+  }
+
+  return node;
 }
 
 static int indents = -2;
 void print_tree(struct node* root) {
   indents += 2;
-  struct node* child = root->child;
 #ifndef L1_HARD
-  if (root->type == SYNTAX && child == NULL) {
+  /* In L1 normal tests, do not print empty syntax node. */
+  if (is_syn(root->ntype) && root->nr_children == 0) {
     indents -= 2;
     return;
   }
@@ -47,49 +114,62 @@ void print_tree(struct node* root) {
   for (int i = 0; i < indents; ++i)
     printf(" ");
   print_node(root);
-  while (child) {
-    print_tree(child);
-    child = child->sibling;
-  }
+  for (int i = 0; i < root->nr_children; ++i)
+    print_tree(root->children[i]);
   indents -= 2;
 }
 
 void print_node(struct node* p) {
-  if (p->type == SYNTAX) {
+  if (is_syn(p->ntype)) {
+    /* print syntax node */
     printf("%s (%d)\n", p->name, p->lineno);
-  } else if (p->type == LEXICAL) {
-    printf("%s", p->name);
-    if (strcmp(p->name, "ID") == 0 || strcmp(p->name, "TYPE") == 0) {
-      printf(": %s\n", p->info);
-    } else if (strcmp(p->name, "INT") == 0) {
-      printf(": %u\n", p->i_val);
-    } else if (strcmp(p->name, "FLOAT") == 0) {
+    return;
+  }
+  /* print lexical node */
+  printf("%s", p->name);
+  switch (p->ntype) {
+    case ID:
+    case TYPE:
+      printf(": %s\n", p->lattr.info);
+      break;
+    case INT:
+      printf(": %u\n", p->lattr.value.i_val);
+      break;
+    case FLOAT:
 #ifdef L1_HARD
-      printf(": %s\n", p->info);
+      printf(": %s\n", p->lattr.info);
 #else
-      printf(": %f\n", p->f_val);
+      printf(": %f\n", p->lattr.value.f_val);
 #endif
+      break;
 #ifdef L1_HARD
-    } else if (strcmp(p->name, "RELOP") == 0) {
-      if (strcmp(p->info, ">=") == 0) {
-        printf(": %s\n", "GE");
-      } else if (strcmp(p->info, "<=") == 0) {
-        printf(": %s\n", "LE");
-      } else if (strcmp(p->info, "!=") == 0) {
-        printf(": %s\n", "NE");
-      } else if (strcmp(p->info, ">") == 0) {
-        printf(": %s\n", "GT");
-      } else if (strcmp(p->info, "<") == 0) {
-        printf(": %s\n", "LT");
-      } else if (strcmp(p->info, "==") == 0) {
-        printf(": %s\n", "EQ");
+    case RELOP:
+      switch (p->lattr.relop_type) {
+        case GT:
+          printf(": GT\n");
+          break;
+        case LT:
+          printf(": LT\n");
+          break;
+        case GE:
+          printf(": GE\n");
+          break;
+        case LE:
+          printf(": LE\n");
+          break;
+        case EQ:
+          printf(": EQ\n");
+          break;
+        case NE:
+          printf(": NE\n");
+          break;
+        default:
+          printf(": BAD\n");
+          break;
       }
+      break;
 #endif
-    } else {
+    default:
       printf("\n");
-    }
-  } else {
-    printf("%s: Bad Type\n", p->name);
-    assert(0);
   }
 }
