@@ -76,8 +76,8 @@ struct var_list* alloc_var(const char* id) {
     return var;
 }
 
-bool search_field(const char* id) {
-    return search_object(&func_table, id);
+struct var_list* search_field(const char* id) {
+    return search_object(&field_table, id);
 }
 
 /* Insert ONE field into type->field and field_table.

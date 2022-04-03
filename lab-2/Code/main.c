@@ -30,14 +30,16 @@ int main(int argc, char** argv) {
   yyparse();
   if (has_error)
     goto error_out;
+#ifdef LAB_1
   print_tree(tree);
+#else
 
   has_error = 0;
   semantic_analysis(tree);
   if (has_error)
     goto error_out;
+#endif
 
-  free_node(tree);
   return 0;
 
 terminated:

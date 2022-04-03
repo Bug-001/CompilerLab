@@ -71,7 +71,7 @@ struct func* search_func(const char* id);
 bool insert_func(struct func* func);
 
 struct var_list* alloc_var(const char* id);
-bool search_field(const char* id);
+struct var_list* search_field(const char* id);
 bool insert_struct_field(struct var_list* field, struct type* type);
 bool insert_func_args(struct var_list* arg, struct func* func);
 

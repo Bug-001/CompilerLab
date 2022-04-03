@@ -44,9 +44,10 @@ Program : ExtDefList  { $$ = gen_tree("Program", PROGRAM, @$.first_line, 1, $1);
 ExtDefList : ExtDef ExtDefList  { $$ = gen_tree("ExtDefList", EXT_DEF_LIST, @$.first_line, 2, $1, $2); }
   | /* empty */                 { $$ = gen_tree("ExtDefList", EXT_DEF_LIST, yylineno, 0); }
   ;
-ExtDef : Specifier ExtDecList SEMI  { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 3, $1, $2, $3); }
-  | Specifier SEMI                  { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 2, $1, $2); }
-  | Specifier FunDec CompSt         { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 3, $1, $2, $3); }
+ExtDef : Specifier ExtDecList SEMI      { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 3, $1, $2, $3); }
+  | Specifier SEMI                      { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 2, $1, $2); }
+  | Specifier FunDec CompSt             { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 3, $1, $2, $3); }
+  | Specifier FunDec SEMI /* LAB_2_1 */ { $$ = gen_tree("ExtDef", EXT_DEF, @$.first_line, 3, $1, $2, $3); }
   /* E */ | error SEMI                      { error_end("ExtDef -> error SEMI"); yyerrok; }
   ;
 ExtDecList : VarDec           { $$ = gen_tree("ExtDecList", EXT_DEC_LIST, @$.first_line, 1, $1); }
