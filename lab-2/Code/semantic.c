@@ -1,3 +1,4 @@
+#include "config.h"
 #include "exp.h"
 #include "node.h"
 #include "prototype.h"
@@ -6,6 +7,8 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 extern int has_error;
 
@@ -48,6 +51,18 @@ void semantic_analysis(struct node* tree) {
         }
         ext_def_list = ext_def_list->children[1];
     }
+    struct rb_node* node;
+    for (node = rb_first(get_func_table()); node; node = rb_next(node)) {
+        struct func* func = container_of(node, struct func, obj.node);
+        struct func_dec_node* func_dec_list = func->dec_node_list;
+        while (func_dec_list) {
+            if (!func->is_defined)
+                pr_err(18, func_dec_list->dec->lineno, "Function '%s' declared but not defined", func->obj.id);
+            struct func_dec_node* del = func_dec_list;
+            func_dec_list = func_dec_list->next;
+            free(del);
+        }
+    }
 }
 
 bool check_variable(struct node* id) {
@@ -74,10 +89,15 @@ bool check_variable(struct node* id) {
     return true;
 }
 
-bool check_function(struct node* id) {
+bool check_function(struct node* id, bool func_def, struct func** func_proto) {
+    *func_proto = NULL;
     char* name = id->lattr.info;
-    void* ptr = search_func(name);
-    if (ptr) {
+    struct func* ptr = search_func(name);
+    if (!ptr)
+        return true;
+    if (ptr->is_declared)
+        *func_proto = ptr;
+    if (func_def && ptr->is_defined) {
         pr_err(4, id->lineno, "Redefinition of function '%s'", name);
         return false;
     }
@@ -275,8 +295,129 @@ struct type* specifier_creator(struct node* def_list, const char* tag) {
 void function(struct node* ext_def) {
     struct type* ret_type = specifier_analyser(ext_def->children[0]);
     struct node* fun_dec = ext_def->children[1];
+    bool func_def = ext_def->children[2]->ntype == COMP_ST ? true : false;
+
+    struct func* func_proto;
+    struct node* id_node = fun_dec->children[0];
+    if (!check_function(id_node, func_def, &func_proto))
+        return;
+
+    push_symbol_table();
+
+    struct func* func = alloc_func(id_node->lattr.info);
+    func->ret_type = ret_type;
     assert(fun_dec->ntype == FUN_DEC);
-    // TODO: 
+    /* FunDec -> ID LP [Varist] RP */
+    if (fun_dec->nr_children == 4) {
+        /* Analyse VarList */
+        struct node* var_list = fun_dec->children[2];
+        assert(var_list->ntype == VAR_LIST);
+        while (var_list->nr_children == 3) {
+            /* VarList -> ParamDec COMMA VarList */
+            struct node* param_dec = var_list->children[0];
+            var_list = var_list->children[2];
+            assert(param_dec->ntype == PARAM_DEC);
+            /* ParamDec -> Specifier VarDec */
+            struct type* param_type = specifier_analyser(param_dec->children[0]);
+            parameter_declaration(param_dec->children[1], param_type, func, func_def);
+        }
+        /* VarList -> ParamDec */
+        struct node* param_dec = var_list->children[0];
+        assert(param_dec->ntype == PARAM_DEC);
+        /* ParamDec -> Specifier VarDec */
+        struct type* param_type = specifier_analyser(param_dec->children[0]);
+        parameter_declaration(param_dec->children[1], param_type, func, func_def);
+    }
+
+    if (func_proto && !func_eq(func, func_proto)) {
+        if (!func_proto->is_defined) {
+            if (func_def) {
+                pr_err(19, fun_dec->lineno, "Definition of function '%s' doesn't match prototype declaration", id_node->lattr.info);
+            } else {
+                pr_err(19, fun_dec->lineno, "Inconsistent declaration of function '%s'", id_node->lattr.info);
+            }
+        } else {
+            assert(!func_def);
+            pr_err(19, fun_dec->lineno, "Declaration of function '%s' doesn't match previous definition", id_node->lattr.info);
+        }
+    } else /* Declaration or definition is OK, update table */ {
+        if (!func_def) {
+            if (func_proto) {
+                add_func_dec(func_proto, fun_dec);
+            } else {
+                func->is_declared = true;
+                insert_func(func);
+                add_func_dec(func, fun_dec);
+            }
+        } else {
+            if (func_proto) {
+                /* Simply set defined. */
+                func_proto->is_defined = true;
+            } else {
+                func->is_declared = true;
+                func->is_defined = true;
+                insert_func(func);
+            }
+        }
+    }
+    
+    if (func_def)
+        __comp_st_analyser(ext_def->children[2]);
+
+    pop_symbol_table();
+    return;
+}
+
+bool func_eq(struct func* func1, struct func* func2) {
+    assert(strcmp(func1->obj.id, func2->obj.id) == 0);
+    struct var_list* args1 = func1->args;
+    struct var_list* args2 = func2->args;
+    while (args1 && args2) {
+        assert(args1->kind == FUNC_PARAM_LIST);
+        assert(args2->kind == FUNC_PARAM_LIST);
+        if (!type_eq(args1->type, args2->type))
+            return false;
+        args1 = args1->thread;
+        args2 = args2->thread;
+    }
+    if (args1 || args2)
+        return false;
+    if (!type_eq(func1->ret_type, func2->ret_type))
+        return false;
+    return true;
+}
+
+bool type_eq(struct type* type1, struct type* type2) {
+    /* Assumption: Error type equals to any type. */
+    if (!type1 || !type2)
+        return true;
+    if (type1->kind != type2->kind)
+        return false;
+    if (type1->kind == TYPE_BASIC)
+        return type1->base == type2->base;
+    if (type1->kind == TYPE_ARRAY)
+        return type_eq(type1->elem, type2->elem);
+#ifdef LAB_2_3
+    if (type1->kind == TYPE_STRUCT) {
+        struct var_list* field1 = type1->field;
+        struct var_list* field2 = type2->field;
+        while (field1 && field2) {
+            assert(field1->kind == STRUCT_FIELD_LIST);
+            assert(field2->kind == STRUCT_FIELD_LIST);
+            if (!type_eq(field1->type, field2->type))
+                return false;
+            field1 = field1->thread;
+            field2 = field2->thread;
+        }
+        if (field1 || field2)
+            return false;
+        return true;
+    }
+#else
+    if (type1->kind == TYPE_STRUCT)
+        return strcmp(type1->obj.id, type2->obj.id) == 0;
+#endif
+    return false;
 }
 
 /* 
@@ -340,4 +481,38 @@ void field_declaration(struct node* var_dec, struct type* type, struct type* str
         field->type = actual_type;
         insert_struct_field(field, struct_parent);
     }
+}
+
+/* 
+ * parameter_declaration:
+ * Derive the actual type of parameter, and insert it into
+ *   function args table.
+ * If `type` is NULL, it's a bad type and errors have been reported;
+ *   but `func_parent` must not be NULL.
+ * If the function is being defined, we should insert the 
+ *   parameter into symtab.
+ */
+void parameter_declaration(struct node* var_dec, struct type* type, struct func* func_parent, bool func_def) {
+    assert(func_parent);
+    struct type* actual_type;
+    struct node* id;
+    actual_type = var_dec_analyser(var_dec, type, &id);
+    if (check_variable(id)) {
+        struct var_list* arg = alloc_var(id->lattr.info);
+        arg->type = actual_type;
+        insert_func_args(arg, func_parent);
+        if (func_def)
+            insert_new_symbol(id->lattr.info, actual_type);
+    }
+}
+
+inline void comp_st_analyser(struct node* comp_st) {
+    push_symbol_table();
+    __comp_st_analyser(comp_st);
+    pop_symbol_table();
+}
+
+void __comp_st_analyser(struct node* comp_st) {
+    assert(comp_st->ntype == COMP_ST);
+
 }

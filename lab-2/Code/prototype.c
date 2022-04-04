@@ -1,6 +1,8 @@
 #include "prototype.h"
 #include "exp.h"
 #include "object.h"
+#include "rbtree.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +62,22 @@ struct func* search_func(const char* id) {
 
 bool insert_func(struct func* func) {
     return insert_object(&func_table, func);
+}
+
+bool add_func_dec(struct func* existing, struct node* node) {
+    if (!existing)
+        return false;
+    if (existing->is_defined)
+        return true;
+    struct func_dec_node* new = malloc(sizeof(struct func_dec_node));
+    new->next = existing->dec_node_list;
+    new->dec = node;
+    existing->dec_node_list = new;
+    return false;
+}
+
+struct rb_root* get_func_table() {
+    return &func_table;
 }
 
 static struct rb_root field_table = RB_ROOT;

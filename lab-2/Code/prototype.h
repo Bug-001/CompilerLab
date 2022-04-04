@@ -52,6 +52,11 @@ struct type {
   };
 };
 
+struct func_dec_node {
+  struct node* dec;
+  struct func_dec_node* next;
+};
+
 /* Inherited from struct object */
 struct func {
   struct object obj;
@@ -60,6 +65,8 @@ struct func {
   struct type* ret_type;
   /* args is reversed */
   struct var_list* args;
+  /* `dec_node_list` is not managed by GC */
+  struct func_dec_node* dec_node_list;
 };
 
 struct type* alloc_type(const char* id);
@@ -69,6 +76,8 @@ struct type* search_type(const char* id);
 struct func* alloc_func(const char* id);
 struct func* search_func(const char* id);
 bool insert_func(struct func* func);
+bool add_func_dec(struct func* existing, struct node* node);
+struct rb_root* get_func_table();
 
 struct var_list* alloc_var(const char* id);
 struct var_list* search_field(const char* id);
