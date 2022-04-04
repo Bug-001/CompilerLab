@@ -55,11 +55,11 @@ bool check_variable(struct node* id) {
     char* name = id->lattr.info;
     if ((ptr = search_symbol_within_compst(name))) {
         pr_err(3, id->lineno, "Redefinition of variable '%s'", name);
-        return ptr;
+        return false;
     }
     if ((ptr = search_type(name))) {
         pr_err(3, id->lineno, "Variable name '%s' conflicts with defined struct type", name);
-        return ptr;
+        return false;
     }
     if ((ptr = search_field(name))) {
         char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
@@ -69,9 +69,9 @@ bool check_variable(struct node* id) {
         } else {
             pr_err(3, id->lineno, "Variable name '%s' conflicts with a field of struct '%s'", name, struct_name);
         }
-        return ptr;
+        return false;
     }
-    return NULL;
+    return true;
 }
 
 bool check_function(struct node* id) {
@@ -79,9 +79,9 @@ bool check_function(struct node* id) {
     void* ptr = search_func(name);
     if (ptr) {
         pr_err(4, id->lineno, "Redefinition of function '%s'", name);
-        return ptr;
+        return false;
     }
-    return NULL;
+    return true;
 }
 
 bool check_struct(struct node* id) {
@@ -89,11 +89,11 @@ bool check_struct(struct node* id) {
     char* name = id->lattr.info;
     if ((ptr = search_symbol(name))) {
         pr_err(16, id->lineno, "Struct type name '%s' conflicts with defined variable", name);
-        return ptr;
+        return false;
     }
     if ((ptr = search_type(name))) {
         pr_err(16, id->lineno, "Redefinition of struct type '%s'", name);
-        return ptr;
+        return false;
     }
     if ((ptr = search_field(name))) {
         char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
@@ -103,9 +103,9 @@ bool check_struct(struct node* id) {
         } else {
             pr_err(16, id->lineno, "Struct type name '%s' conflicts with a field of struct '%s'", name, struct_name);
         }
-        return ptr;
+        return false;
     }
-    return NULL;
+    return true;
 }
 
 bool check_field(struct node* id) {
@@ -113,11 +113,11 @@ bool check_field(struct node* id) {
     char* name = id->lattr.info;
     if ((ptr = search_symbol(name))) {
         pr_err(15, id->lineno, "Field name '%s' conflicts with defined variable", name);
-        return ptr;
+        return false;
     }
     if ((ptr = search_type(name))) {
         pr_err(16, id->lineno, "Field name '%s' conflicts with struct type", name);
-        return ptr;
+        return false;
     }
     if ((ptr = search_field(name))) {
         char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
@@ -127,9 +127,9 @@ bool check_field(struct node* id) {
         } else {
             pr_err(16, id->lineno, "Field name '%s' conflicts with a field of struct '%s'", name, struct_name);
         }
-        return ptr;
+        return false;
     }
-    return NULL;
+    return true;
 }
 
 struct symbol* require_variable(struct node* id) {
@@ -195,8 +195,7 @@ static inline struct node* get_tag_id(struct node* tag) {
 
 /* 
  * specifier_analyser:
- * Return an existing type or a new type.
- * Return the defined type for error 16.
+ * Return an existing type or a new type, or NULL as a bad type.
  */
 struct type* specifier_analyser(struct node* specifier) {
     assert(specifier->ntype == SPECIFIER);
@@ -204,10 +203,10 @@ struct type* specifier_analyser(struct node* specifier) {
     if (node->ntype == TYPE) {
         return search_type(node->lattr.info);
     }
-    /* for StructSpecifier */
+    /* node must be StructSpecifier */
     assert(node->ntype == STRUCT_SPECIFIER);
     struct node* tag_id = get_tag_id(node->children[1]);
-    char* id = tag_id->lattr.info;
+    char* id = tag_id ? tag_id->lattr.info : NULL;
     if (node->nr_children == 5) {
         /*
          * StructSpecifier -> STRUCT OptTag LC DefList RC
@@ -219,7 +218,7 @@ struct type* specifier_analyser(struct node* specifier) {
             /* But we can define an anonymous struct. */
             id = NULL;
         }
-        return specifier_creator(specifier->children[3], id);
+        return specifier_creator(node->children[3], id);
     }
     /* 
      * StructSpecifier -> STRUCT Tag 
@@ -237,6 +236,7 @@ struct type* specifier_analyser(struct node* specifier) {
 struct type* specifier_creator(struct node* def_list, const char* tag) {
     assert(def_list->ntype == DEF_LIST);
     struct type* ret = alloc_type(tag);
+    ret->kind = TYPE_STRUCT;
     while (def_list->nr_children) {
         /* DefList -> Def DefList */
         struct node* def = def_list->children[0];
@@ -268,7 +268,7 @@ struct type* specifier_creator(struct node* def_list, const char* tag) {
         }
         field_declaration(dec->children[0], type, ret);
     }
-    insert_type(ret);
+    assert(insert_type(ret));
     return ret;
 }
 
@@ -280,18 +280,64 @@ void function(struct node* ext_def) {
 }
 
 /* 
+ * var_dec_analyser:
+ * Derive the actual type of variable, which could be the original
+ *   type or array type.
+ * If `type` is NULL, we only need to find ID of it.
+ */
+struct type* var_dec_analyser(struct node* var_dec, struct type* type, struct node** id) {
+    assert(var_dec->ntype == VAR_DEC);
+    if (!type) {
+        /* Bad type. */
+        while (var_dec->nr_children == 4) {
+            var_dec = var_dec->children[0];
+        }
+        *id = var_dec->children[0];
+        return NULL;
+    }
+    struct type* actual_type = type;
+    while (var_dec->nr_children == 4) {
+        /* VarDec -> VarDec LB INT RB */
+        struct type* container = alloc_type(NULL);
+        container->kind = TYPE_ARRAY;
+        container->elem = actual_type;
+        container->size = var_dec->children[2]->lattr.value.i_val;
+        actual_type = container;
+        var_dec = var_dec->children[0];
+    }
+    /* VarDec -> ID */
+    *id = var_dec->children[0];
+    return type;
+}
+
+/* 
  * variable_declaration:
- * Derive the actual type of variable, and insert it into symbol table.
- * If `type` is NULL, it's a bad type and errors have been reported;
- * the `actual_type` is no need to be analysed.
+ * Derive the actual type of variable, and insert it into symtab.
+ * `type` is nullable.
  */
 void variable_declaration(struct node* var_dec, struct type* type) {
     struct type* actual_type;
-    char* id;
-    // TODO:
-    insert_new_symbol(id, actual_type);
+    struct node* id;
+    actual_type = var_dec_analyser(var_dec, type, &id);
+    if (check_variable(id))
+        insert_new_symbol(id->lattr.info, actual_type);
 }
 
+/* 
+ * field_declaration:
+ * Derive the actual type of variable, and insert it into
+ *   struct type field list and field_table.
+ * If `type` is NULL, it's a bad type and errors have been reported;
+ *   but `struct_parent` must not be NULL.
+ */
 void field_declaration(struct node* var_dec, struct type* type, struct type* struct_parent) {
-    // insert_struct_field(struct var_list *field, struct type *type)
+    assert(struct_parent);
+    struct type* actual_type;
+    struct node* id;
+    actual_type = var_dec_analyser(var_dec, type, &id);
+    if (check_field(id)) {
+        struct var_list* field = alloc_var(id->lattr.info);
+        field->type = actual_type;
+        insert_struct_field(field, struct_parent);
+    }
 }

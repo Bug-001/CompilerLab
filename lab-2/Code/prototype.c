@@ -84,6 +84,8 @@ struct var_list* search_field(const char* id) {
  * Some of field's attributes will be modified.
  */
 bool insert_struct_field(struct var_list* field, struct type* type) {
+    if (!type)
+        return false;
     if (type->kind != TYPE_STRUCT)
         return false;
     bool res = insert_object(&field_table, field);
