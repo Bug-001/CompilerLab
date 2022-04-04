@@ -1,7 +1,7 @@
 #ifndef NODE_H
 #define NODE_H
 
-#include "semantic.h"
+#include "exp.h"
 
 /* syntax types */
 enum syntax_type {
@@ -32,6 +32,14 @@ enum syntax_type {
 
 #define is_lex(type) ((type) > NR_SYNTAX_TYPES ? 1 : 0)
 #define is_syn(type) (!is_lex(type))
+
+struct lexical_attr {
+  char* info;
+  union {
+    struct value value;
+    enum relop_type relop_type;
+  };
+};
 
 struct node {
   const char* name;

@@ -12,6 +12,15 @@ enum exp_type {
   EXP_NORMAL
 };
 
+enum relop_type {
+  GT,
+  LT,
+  GE,
+  LE,
+  EQ,
+  NE
+};
+
 struct value {
   union {
     int i_val;
@@ -43,6 +52,17 @@ struct expression {
   struct type* type;
   bool value_is_avail;
   struct value val;
+};
+
+struct exp_attr {
+  enum exp_type type;
+  struct node* parent;
+  union {
+    struct symbol* sym;
+    struct field_access* field;
+    struct array_access* array;
+    struct expression* exp;
+  };
 };
 
 struct symbol* search_symbol(const char* id);

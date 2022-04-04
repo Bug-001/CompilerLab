@@ -12,6 +12,8 @@
 
 extern int has_error;
 
+static struct func* cur_func = NULL;
+
 static void pr_err(int err_type, int line, const char* msg_format, ...) {
     printf("Error type %d at Line %d: ", err_type, line);
     va_list args;
@@ -265,10 +267,10 @@ struct type* specifier_creator(struct node* def_list, const char* tag) {
         /* Def -> Specifier DecList SEMI */
         struct type* type = specifier_analyser(def->children[0]);
         struct node* dec_list = def->children[1];
-        while (dec_list->nr_children == 3) {
+        while (true) {
             /* DecList -> Dec COMMA DecList */
+            /* DecList -> Dec */
             struct node* dec = dec_list->children[0];
-            dec_list = dec_list->children[2];
             assert(dec->ntype == DEC);
             if (dec->nr_children == 3) {
                 /* 
@@ -279,14 +281,11 @@ struct type* specifier_creator(struct node* def_list, const char* tag) {
                 pr_err(15, dec->children[1]->lineno, "Expected ';' at end of declaration list");
             }
             field_declaration(dec->children[0], type, ret);
+            if (dec_list->nr_children == 3)
+                dec_list = dec_list->children[2];
+            else
+                break;
         }
-        /* DecList -> Dec */
-        /* Dec -> VarDec | VarDec ASSIGNOP Exp */
-        struct node* dec = dec_list->children[0];
-        if (dec->nr_children == 3) {
-            pr_err(15, dec->children[1]->lineno, "Expected ';' at end of declaration list");
-        }
-        field_declaration(dec->children[0], type, ret);
     }
     assert(insert_type(ret));
     return ret;
@@ -312,21 +311,19 @@ void function(struct node* ext_def) {
         /* Analyse VarList */
         struct node* var_list = fun_dec->children[2];
         assert(var_list->ntype == VAR_LIST);
-        while (var_list->nr_children == 3) {
+        while (true) {
             /* VarList -> ParamDec COMMA VarList */
+            /* VarList -> ParamDec */
             struct node* param_dec = var_list->children[0];
-            var_list = var_list->children[2];
             assert(param_dec->ntype == PARAM_DEC);
             /* ParamDec -> Specifier VarDec */
             struct type* param_type = specifier_analyser(param_dec->children[0]);
             parameter_declaration(param_dec->children[1], param_type, func, func_def);
+            if (var_list->nr_children == 3)
+                var_list = var_list->children[2];
+            else
+                break;
         }
-        /* VarList -> ParamDec */
-        struct node* param_dec = var_list->children[0];
-        assert(param_dec->ntype == PARAM_DEC);
-        /* ParamDec -> Specifier VarDec */
-        struct type* param_type = specifier_analyser(param_dec->children[0]);
-        parameter_declaration(param_dec->children[1], param_type, func, func_def);
     }
 
     if (func_proto && !func_eq(func, func_proto)) {
@@ -361,8 +358,11 @@ void function(struct node* ext_def) {
         }
     }
     
-    if (func_def)
+    if (func_def) {
+        cur_func = func;
         __comp_st_analyser(ext_def->children[2]);
+        cur_func = NULL;
+    }
 
     pop_symbol_table();
     return;
@@ -456,12 +456,13 @@ struct type* var_dec_analyser(struct node* var_dec, struct type* type, struct no
  * Derive the actual type of variable, and insert it into symtab.
  * `type` is nullable.
  */
-void variable_declaration(struct node* var_dec, struct type* type) {
+struct type* variable_declaration(struct node* var_dec, struct type* type) {
     struct type* actual_type;
     struct node* id;
     actual_type = var_dec_analyser(var_dec, type, &id);
     if (check_variable(id))
         insert_new_symbol(id->lattr.info, actual_type);
+    return actual_type;
 }
 
 /* 
@@ -514,5 +515,156 @@ inline void comp_st_analyser(struct node* comp_st) {
 
 void __comp_st_analyser(struct node* comp_st) {
     assert(comp_st->ntype == COMP_ST);
+    /* CompSt -> LC DefList StmtList RC */ 
+
+    /* Analyse DefList */
+    struct node* def_list = comp_st->children[1];
+    assert(def_list->ntype == DEF_LIST);
+    while (def_list->nr_children) {
+        /* DefList -> Def DefList */
+        struct node* def = def_list->children[0];
+        def_list = def_list->children[1];
+        assert(def->ntype == DEF);
+        /* Def -> Specifier DecList SEMI */
+        struct type* base_type = specifier_analyser(def->children[0]);
+        struct node* dec_list = def->children[1];
+        while (true) {
+            /* DecList -> Dec COMMA DecList */
+            /* DecList -> Dec */
+            struct node* dec = dec_list->children[0];
+            assert(dec->ntype == DEC);
+            /* Dec -> VarDec */
+            /* Dec -> VarDec ASSIGNOP Exp */
+            struct type* actual_type = variable_declaration(dec->children[0], base_type);
+            if (dec->nr_children == 3) {
+                /* Process assign */
+                struct type* exp_type = expression_analyser(dec->children[2]);
+                if (!type_eq(actual_type, exp_type))
+                    pr_err(5, dec->children[1]->lineno, "Initializing '%s' with an expression of incompatible type '%s'", actual_type->obj.id, exp_type->obj.id);
+                else {
+                    /* TODO: Assignment code */
+                }
+            }
+            if (dec_list->nr_children == 3)
+                dec_list = dec_list->children[2];
+            else
+                break;
+        }
+    }
+
+    /* Analyse StmtList */
+    struct node* stmt_list = comp_st->children[2];
+    assert(stmt_list->ntype == STMT_LIST);
+    while (stmt_list->nr_children) {
+        /* StmtList -> Stmt StmtList */
+        struct node* stmt = stmt_list->children[0];
+        stmt_list = stmt_list->children[1];
+        statement_analyser(stmt);
+    }
+}
+
+void statement_analyser(struct node* stmt) {
+    assert(stmt->ntype == STMT);
+    if (stmt->nr_children == 2) {
+        /* Stmt -> Exp SEMI */
+        expression_analyser(stmt->children[0]);
+    } else if (stmt->nr_children == 1) {
+        /* Stmt -> CompSt */
+        comp_st_analyser(stmt->children[0]);
+    } else if (stmt->nr_children == 3) {
+        /* Stmt -> RETURN Exp SEMI */
+        struct type* ret_type = expression_analyser(stmt->children[1]);
+        if (!type_eq(ret_type, cur_func->ret_type))
+            pr_err(8, stmt->children[1]->lineno, "Type mismatched for return");
+    } else if (stmt->children[0]->ntype == IF) {
+        /* Stmt -> IF LP Exp RP Stmt */
+        /* Stmt -> IF LP Exp RP Stmt ELSE Stmt */
+        if_statement_analyser(stmt);
+    } else if (stmt->children[0]->ntype == WHILE) {
+        /* Stmt -> WHILE LP Exp RP Stmt */
+        while_statement_analyser(stmt);
+    } else {
+        assert(0);
+    }
+}
+
+void if_statement_analyser(struct node* stmt) {
+    assert(stmt->ntype == STMT);
+    /* Stmt -> IF LP Exp RP Stmt */
+    /* Stmt -> IF LP Exp RP Stmt ELSE Stmt */
+    struct node* exp = stmt->children[2];
+    struct type* cond_type = expression_analyser(exp);
+    if (!type_eq(cond_type, search_type("int")))
+        /* TODO: */
+        pr_err(114514, exp->lineno, "Bad type in condition expression");
+    statement_analyser(stmt->children[4]);
+    if (stmt->nr_children == 7) {
+        statement_analyser(stmt->children[6]);
+    }
+}
+
+void while_statement_analyser(struct node* stmt) {
+    assert(stmt->ntype == STMT);
+    /* Stmt -> WHILE LP Exp RP Stmt */
+    struct node* exp = stmt->children[2];
+    struct type* cond_type = expression_analyser(exp);
+    if (!type_eq(cond_type, search_type("int")))
+        /* TODO: */
+        pr_err(114514, exp->lineno, "Bad type in condition expression");
+    statement_analyser(stmt->children[4]);
+}
+
+struct type* expression_analyser(struct node* exp) {
+    assert(exp->ntype == EXP);
+    struct type* ret;
+    switch (exp->nr_children) {
+    case 1:
+        ret = expression_analyser_1(exp);
+        break;
+    case 2:
+        ret = expression_analyser_2(exp);
+        break;
+    case 3:
+        ret = expression_analyser_3(exp);
+        break;
+    case 4:
+        ret = expression_analyser_4(exp);
+        break;
+    default:
+        assert(0);
+    }
+    return ret;
+}
+
+inline struct type* expression_analyser_1(struct node* exp) {
+    if (exp->children[0]->ntype == ID) {
+        /* EXP -> ID */
+        struct symbol* sym = require_variable(exp->children[0]);
+        if (!sym)
+            return NULL;
+        return sym->type;
+    }
+    /* EXP -> INT | FLOAT */
+    if (exp->children[0]->ntype == INT)
+        return search_type("int");
+    if (exp->children[0]->ntype == FLOAT)
+        return search_type("float");
+}
+
+inline struct type* expression_analyser_2(struct node* exp) {
+    /* EXP -> MINUS EXP | NOT EXP */
+    return expression_analyser(exp->children[1]);
+}
+
+inline struct type* expression_analyser_3(struct node* exp) {
+    if (exp->children[0]->ntype == EXP) {
+        /* Arithmetic operations */
+        if (exp->children[1]->ntype == ASSIGNOP) {
+
+        }
+    }
+}
+
+inline struct type* expression_analyser_4(struct node* exp) {
 
 }
