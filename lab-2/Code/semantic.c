@@ -78,16 +78,6 @@ bool check_variable(struct node* id) {
         pr_err(3, id->lineno, "Variable name '%s' conflicts with defined struct type", name);
         return false;
     }
-    if ((ptr = search_field(name))) {
-        char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
-        if ('0' <= struct_name[0] && struct_name[0] <= '9') {
-            /* anonymous type */
-            pr_err(3, id->lineno, "Variable name '%s' conflicts with a field of an unnamed struct", name);
-        } else {
-            pr_err(3, id->lineno, "Variable name '%s' conflicts with a field of struct '%s'", name, struct_name);
-        }
-        return false;
-    }
     return true;
 }
 
@@ -117,37 +107,33 @@ bool check_struct(struct node* id) {
         pr_err(16, id->lineno, "Redefinition of struct type '%s'", name);
         return false;
     }
-    if ((ptr = search_field(name))) {
-        char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
-        if ('0' <= struct_name[0] && struct_name[0] <= '9') {
-            /* anonymous type */
-            pr_err(16, id->lineno, "Struct type name '%s' conflicts with a field of an unnamed struct", name);
-        } else {
-            pr_err(16, id->lineno, "Struct type name '%s' conflicts with a field of struct '%s'", name, struct_name);
-        }
-        return false;
-    }
+    // if ((ptr = search_field(name))) {
+    //     char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
+    //     if ('0' <= struct_name[0] && struct_name[0] <= '9') {
+    //         /* anonymous type */
+    //         pr_err(16, id->lineno, "Struct type name '%s' conflicts with a field of an unnamed struct", name);
+    //     } else {
+    //         pr_err(16, id->lineno, "Struct type name '%s' conflicts with a field of struct '%s'", name, struct_name);
+    //     }
+    //     return false;
+    // }
     return true;
 }
 
-bool check_field(struct node* id) {
+bool check_field(struct node* id, struct type* type) {
     void* ptr;
     char* name = id->lattr.info;
-    if ((ptr = search_symbol(name))) {
-        pr_err(15, id->lineno, "Field name '%s' conflicts with defined variable", name);
-        return false;
-    }
-    if ((ptr = search_type(name))) {
-        pr_err(16, id->lineno, "Field name '%s' conflicts with struct type", name);
-        return false;
-    }
-    if ((ptr = search_field(name))) {
+    // if ((ptr = search_type(name))) {
+    //     pr_err(16, id->lineno, "Field name '%s' conflicts with struct type", name);
+    //     return false;
+    // }
+    if ((ptr = search_field(name, type))) {
         char* struct_name = ((struct var_list* )ptr)->parent.type->obj.id;
         if ('0' <= struct_name[0] && struct_name[0] <= '9') {
             /* anonymous type */
-            pr_err(16, id->lineno, "Field name '%s' conflicts with a field of an unnamed struct", name);
+            pr_err(15, id->lineno, "Field name '%s' conflicts with a field of an unnamed struct", name);
         } else {
-            pr_err(16, id->lineno, "Field name '%s' conflicts with a field of struct '%s'", name, struct_name);
+            pr_err(15, id->lineno, "Field name '%s' conflicts with a field of struct '%s'", name, struct_name);
         }
         return false;
     }
@@ -187,9 +173,9 @@ struct type* require_struct(struct node* id) {
     return ptr;
 }
 
-struct var_list* require_field(struct node* id) {
+struct var_list* require_field(struct node* id, struct type* type) {
     char* name = id->lattr.info;
-    struct var_list* ptr = search_field(name);
+    struct var_list* ptr = search_field(name, type);
     assert(!ptr || ptr->kind == STRUCT_FIELD_LIST);
     if (!ptr) {
         pr_err(14, id->lineno, "Undefined field '%s'", name);
@@ -245,7 +231,7 @@ struct type* specifier_analyser(struct node* specifier) {
             /* But we can define an anonymous struct. */
             id = NULL;
         }
-        return specifier_creator(node->children[3], id);
+        return specifier_creator(node->children[3], id, tag_id);
     }
     /* 
      * StructSpecifier -> STRUCT Tag 
@@ -260,7 +246,7 @@ struct type* specifier_analyser(struct node* specifier) {
  * Define a new type and insert it into type table.
  * tag is NULL for an anonymous struct.
  */
-struct type* specifier_creator(struct node* def_list, const char* tag) {
+struct type* specifier_creator(struct node* def_list, const char* tag, struct node* tag_node) {
     assert(def_list->ntype == DEF_LIST);
     struct type* ret = alloc_type(tag);
     ret->kind = TYPE_STRUCT;
@@ -292,7 +278,10 @@ struct type* specifier_creator(struct node* def_list, const char* tag) {
                 break;
         }
     }
-    assert(insert_type(ret));
+    if (!insert_type(ret)) {
+        pr_err(16, tag_node->lineno, "Redefinition of struct type '%s'", ret->obj.id);
+        return NULL;
+    }
     return ret;
 }
 
@@ -305,6 +294,7 @@ void function(struct node* ext_def) {
     struct func* func_proto;
     struct node* id_node = fun_dec->children[0];
     if (!check_function(id_node, func_def, &func_proto))
+        /* We want to perform semantic analysis for redifined function too, so don't return immediately. */
         redefined = true;
 
     push_symbol_table();
@@ -340,8 +330,11 @@ void function(struct node* ext_def) {
                 pr_err(19, fun_dec->lineno, "Inconsistent declaration of function '%s'", id_node->lattr.info);
             }
         } else {
-            assert(!func_def);
-            pr_err(19, fun_dec->lineno, "Declaration of function '%s' doesn't match previous definition", id_node->lattr.info);
+            if (func_def && !redefined) {
+                pr_err(19, fun_dec->lineno, "Declaration of function '%s' doesn't match previous definition", id_node->lattr.info);
+            } else {
+                assert(redefined);
+            }
         }
     } else /* Declaration or definition is OK, update table */ {
         if (!func_def) {
@@ -493,7 +486,7 @@ void field_declaration(struct node* var_dec, struct type* type, struct type* str
     struct type* actual_type;
     struct node* id;
     actual_type = var_dec_analyser(var_dec, type, &id);
-    if (check_field(id)) {
+    if (check_field(id, struct_parent)) {
         struct var_list* field = alloc_var(id->lattr.info);
         field->type = actual_type;
         insert_struct_field(field, struct_parent);
@@ -618,7 +611,7 @@ void if_statement_analyser(struct node* stmt) {
     struct type* cond_type = exp_attr->type;
     if (!type_eq(cond_type, get_int_type()))
         /* TODO: */
-        pr_err(114514, exp->lineno, "Bad type in condition expression");
+        pr_err(7, exp->lineno, "Bad type in condition expression");
     /* TODO: use exp_attr to do branch optimization */
     statement_analyser(stmt->children[4]);
     if (stmt->nr_children == 7) {
@@ -750,7 +743,7 @@ inline void expression_analyser_3(struct node* exp, struct exp_attr* attr) {
             pr_err(13, exp->children[1]->lineno, "Expression before '.' is not a structure variable");
             return;
         }
-        struct var_list* field = require_field(field_id);
+        struct var_list* field = require_field(field_id, exp_attr->type);
         if (!field) {
             /* Error has been reported. */
             return;

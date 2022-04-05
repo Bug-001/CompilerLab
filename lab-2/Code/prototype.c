@@ -84,8 +84,6 @@ struct rb_root* get_func_table() {
     return &func_table;
 }
 
-static struct rb_root field_table = RB_ROOT;
-
 /* If id is NULL, a hidden id will be allocated. */
 struct var_list* alloc_var(const char* id) {
     static unsigned hidden_id = 0;
@@ -98,8 +96,16 @@ struct var_list* alloc_var(const char* id) {
     return var;
 }
 
-struct var_list* search_field(const char* id) {
-    return search_object(&field_table, id);
+struct var_list* search_field(const char* id, struct type* type) {
+    if (!type || type->kind != TYPE_STRUCT)
+        return NULL;
+    struct var_list* cur = type->field;
+    while (cur) {
+        if (strcmp(cur->obj.id, id) == 0)
+            return cur;
+        cur = cur->pred;
+    }
+    return NULL;
 }
 
 /* Insert ONE field into type->field and field_table.
@@ -110,8 +116,7 @@ bool insert_struct_field(struct var_list* field, struct type* type) {
         return false;
     if (type->kind != TYPE_STRUCT)
         return false;
-    bool res = insert_object(&field_table, field);
-    if (!res)
+    if (search_field(field->obj.id, type))
         return false;
     field->kind = STRUCT_FIELD_LIST;
     field->parent.type = type;

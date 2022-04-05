@@ -12,19 +12,19 @@ void semantic_analysis(struct node* tree);
 bool check_variable(struct node* id);
 bool check_function(struct node* id, bool func_def, struct func** func_proto);
 bool check_struct(struct node* id);
-bool check_field(struct node* id);
+bool check_field(struct node* id, struct type* type);
 
 struct symbol* require_variable(struct node* id);
 struct func* require_function(struct node* id);
 struct type* require_struct(struct node* id);
-struct var_list* require_field(struct node* id);
+struct var_list* require_field(struct node* id, struct type* type);
 
 
 void global_variable(struct node* ext_def);
 
 struct type* specifier_analyser(struct node* specifier);
 
-struct type* specifier_creator(struct node* def_list, const char* tag);
+struct type* specifier_creator(struct node* def_list, const char* tag, struct node* tag_node);
 
 void function(struct node* ext_def);
 

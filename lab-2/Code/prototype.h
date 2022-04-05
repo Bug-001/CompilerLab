@@ -81,7 +81,7 @@ bool add_func_dec(struct func* existing, struct node* node);
 struct rb_root* get_func_table();
 
 struct var_list* alloc_var(const char* id);
-struct var_list* search_field(const char* id);
+struct var_list* search_field(const char* id, struct type* type);
 bool insert_struct_field(struct var_list* field, struct type* type);
 bool insert_func_args(struct var_list* arg, struct func* func);
 

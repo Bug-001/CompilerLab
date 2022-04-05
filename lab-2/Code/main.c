@@ -46,5 +46,5 @@ terminated:
   printf("compilation terminated.\n");
 
 error_out:
-  return -1;
+  return 0;
 }
