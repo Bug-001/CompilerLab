@@ -383,8 +383,8 @@ bool func_eq(struct func* func1, struct func* func2) {
         assert(args2->kind == FUNC_PARAM_LIST);
         if (!type_eq(args1->type, args2->type))
             return false;
-        args1 = args1->thread;
-        args2 = args2->thread;
+        args1 = args1->pred;
+        args2 = args2->pred;
     }
     if (args1 || args2)
         return false;
@@ -412,8 +412,8 @@ bool type_eq(struct type* type1, struct type* type2) {
             assert(field2->kind == STRUCT_FIELD_LIST);
             if (!type_eq(field1->type, field2->type))
                 return false;
-            field1 = field1->thread;
-            field2 = field2->thread;
+            field1 = field1->pred;
+            field2 = field2->pred;
         }
         if (field1 || field2)
             return false;
@@ -816,13 +816,52 @@ void function_call_analyser(struct node* exp, struct exp_attr* attr) {
         /* Error has been reported. */
         return;
 
-    
+    /* Exp -> ID LP RP */
+    if (exp->nr_children == 3) {
+        if (func->args != NULL) {
+            pr_err(9, exp->lineno, "Too few arguments in call to '%s', expected %d, have 0", func->obj.id, func->nr_args);
+        }
+        goto set_attr;
+    }
 
-    /* TODO: parameter check */
+    /* Exp -> ID LP Args RP */
+    int position = 0;
+    struct var_list* param_list = func->args;
+    if (!param_list) {
+        pr_err(9, exp->lineno, "Too many arguments in call to '%s', expected 0", func->obj.id);
+        goto set_attr;
+    }
+    while (param_list->pred) {
+        param_list = param_list->pred;
+    }
+    struct node* args = exp->children[2];
+    assert(args->ntype == ARGS);
+    while (true) {
+        /* Args-> Exp COMMA Args */
+        struct node* arg = args->children[0];
+        assert(arg->ntype == EXP);
+        struct exp_attr* arg_attr = expression_analyser(arg);
+        if (!type_eq(arg_attr->type, param_list->type)) {
+            pr_err(9, arg->lineno, "Argument %d has unexpected type in call to function '%s'", position, func->obj.id);
+        } else {
+            /* TODO: pass arg */
+        }
+        ++position;
+        param_list = param_list->succ;
+        if (!param_list)
+            break;
+        if (args->nr_children == 3)
+            args = args->children[2];
+        else
+            break;
+    }
+    if (!param_list && args->nr_children == 3) {
+        pr_err(9, exp->lineno, "Too many arguments in call to '%s', expected %d", func->obj.id, func->nr_args);
+    } else if (param_list && args->nr_children == 1) {
+        pr_err(9, exp->lineno, "Too few arguments in call to '%s', expected %d, have %d", func->obj.id, func->nr_args, position);
+    }
 
-
-    // if (exp->nr_children == 4)
-
+set_attr:
     attr->kind = EXP_ARITHMETIC;
     attr->type = func->ret_type;
     attr->value_kind = VALUE_NAC;

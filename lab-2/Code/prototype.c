@@ -115,7 +115,10 @@ bool insert_struct_field(struct var_list* field, struct type* type) {
         return false;
     field->kind = STRUCT_FIELD_LIST;
     field->parent.type = type;
-    field->thread = type->field;
+    field->pred = type->field;
+    field->succ = NULL;
+    if (field->pred)
+        field->pred->succ = field;
     type->field = field;
     return true;
 }
@@ -126,7 +129,11 @@ bool insert_struct_field(struct var_list* field, struct type* type) {
 bool insert_func_args(struct var_list* arg, struct func* func) {
     arg->kind = FUNC_PARAM_LIST;
     arg->parent.func = func;
-    arg->thread = func->args;
+    arg->pred = func->args;
+    arg->succ = NULL;
+    if (arg->pred)
+        arg->pred->succ = arg;
     func->args = arg;
+    ++func->nr_args;
     return true;
 }

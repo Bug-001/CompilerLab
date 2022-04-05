@@ -29,10 +29,8 @@ struct var_list {
     struct type* type;
     struct func* func;
   } parent;
-  /* When traversing var_list, we have to follow the thread
-   * rather than rbtree, to keep the declared order of vars.
-   */
-  struct var_list* thread;
+  struct var_list* pred;  /* next */
+  struct var_list* succ;  /* prev */
 };
 
 /* Inherited from struct object */
@@ -62,6 +60,7 @@ struct func {
   struct object obj;
   bool is_declared;
   bool is_defined;
+  int nr_args;
   struct type* ret_type;
   /* args is reversed */
   struct var_list* args;
