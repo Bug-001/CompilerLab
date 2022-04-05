@@ -9,6 +9,18 @@
 
 static struct rb_root type_table = RB_ROOT;
 
+static struct type __int_type = {
+    .obj.id = "int",
+    .kind = TYPE_BASIC,
+    .base = TYPE_INT
+};
+
+static struct type __float_type = {
+    .obj.id = "float",
+    .kind = TYPE_BASIC,
+    .base = TYPE_FLOAT
+};
+
 /* If id is NULL, a hidden id will be allocated. */
 struct type* alloc_type(const char* id) {
     static unsigned hidden_id = 0;
@@ -25,28 +37,20 @@ bool insert_type(struct type* type) {
     return insert_object(&type_table, type);
 }
 
-static void init_type_table() {
-    struct type* __int_type = NULL;
-    __int_type = alloc_type("int");
-    __int_type->kind = TYPE_BASIC;
-    __int_type->base = TYPE_INT;
-    insert_type(__int_type);
-
-    struct type* __float_type = NULL;
-    __float_type = alloc_type("float");
-    __float_type->kind = TYPE_BASIC;
-    __float_type->base = TYPE_FLOAT;
-    insert_type(__float_type);
+struct type* search_type(const char* id) {
+    if (strcmp(id, "int") == 0)
+        return get_int_type();
+    if (strcmp(id, "float") == 0)
+        return get_float_type();
+    return search_object(&type_table, id);
 }
 
-struct type* search_type(const char* id) {
-    static bool __inited = false;
-    if (!__inited) {
-        /* static initialize */
-        init_type_table();
-        __inited = true;
-    }
-    return search_object(&type_table, id);
+inline struct type* get_int_type() {
+    return &__int_type;
+}
+
+inline struct type* get_float_type() {
+    return &__float_type;
 }
 
 static struct rb_root func_table = RB_ROOT;

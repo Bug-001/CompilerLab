@@ -48,7 +48,7 @@ struct node {
   /* lexical attribute or syntax attribute */
   union {
     struct lexical_attr lattr;
-    struct syntax_attr* p_sattr;
+    struct exp_attr* p_sattr;
   };
 
   struct node* parent;

@@ -165,9 +165,14 @@ struct symbol* require_variable(struct node* id) {
 
 struct func* require_function(struct node* id) {
     char* name = id->lattr.info;
-    struct func* ptr = search_func(name);
-    if (!ptr) {
+    void* ptr;
+    if ((ptr = search_symbol(name))) {
+        pr_err(11, id->lineno, "'%s' is not a function", name);
+        return NULL;
+    }
+    if (!(ptr = search_func(name))) {
         pr_err(2, id->lineno, "Undefined function '%s'", name);
+        return NULL;
     }
     return ptr;
 }
@@ -295,11 +300,12 @@ void function(struct node* ext_def) {
     struct type* ret_type = specifier_analyser(ext_def->children[0]);
     struct node* fun_dec = ext_def->children[1];
     bool func_def = ext_def->children[2]->ntype == COMP_ST ? true : false;
+    bool redefined = false;
 
     struct func* func_proto;
     struct node* id_node = fun_dec->children[0];
     if (!check_function(id_node, func_def, &func_proto))
-        return;
+        redefined = true;
 
     push_symbol_table();
 
@@ -350,7 +356,7 @@ void function(struct node* ext_def) {
             if (func_proto) {
                 /* Simply set defined. */
                 func_proto->is_defined = true;
-            } else {
+            } else if (!redefined) {
                 func->is_declared = true;
                 func->is_defined = true;
                 insert_func(func);
@@ -420,6 +426,14 @@ bool type_eq(struct type* type1, struct type* type2) {
     return false;
 }
 
+bool type_eq_arithmetic(struct type* type1, struct type* type2) {
+    if (!type1 || !type2)
+        return true;
+    if (type1->kind != TYPE_BASIC || type2->kind != TYPE_BASIC)
+        return false;
+    return type1->base == type2->base;
+}
+
 /* 
  * var_dec_analyser:
  * Derive the actual type of variable, which could be the original
@@ -434,6 +448,7 @@ struct type* var_dec_analyser(struct node* var_dec, struct type* type, struct no
             var_dec = var_dec->children[0];
         }
         *id = var_dec->children[0];
+        assert((*id)->ntype == ID);
         return NULL;
     }
     struct type* actual_type = type;
@@ -448,7 +463,8 @@ struct type* var_dec_analyser(struct node* var_dec, struct type* type, struct no
     }
     /* VarDec -> ID */
     *id = var_dec->children[0];
-    return type;
+    assert((*id)->ntype == ID);
+    return actual_type;
 }
 
 /* 
@@ -456,13 +472,13 @@ struct type* var_dec_analyser(struct node* var_dec, struct type* type, struct no
  * Derive the actual type of variable, and insert it into symtab.
  * `type` is nullable.
  */
-struct type* variable_declaration(struct node* var_dec, struct type* type) {
+struct symbol* variable_declaration(struct node* var_dec, struct type* type) {
     struct type* actual_type;
     struct node* id;
     actual_type = var_dec_analyser(var_dec, type, &id);
     if (check_variable(id))
-        insert_new_symbol(id->lattr.info, actual_type);
-    return actual_type;
+        return insert_new_symbol(id->lattr.info, actual_type);
+    return NULL;
 }
 
 /* 
@@ -535,14 +551,19 @@ void __comp_st_analyser(struct node* comp_st) {
             assert(dec->ntype == DEC);
             /* Dec -> VarDec */
             /* Dec -> VarDec ASSIGNOP Exp */
-            struct type* actual_type = variable_declaration(dec->children[0], base_type);
-            if (dec->nr_children == 3) {
-                /* Process assign */
-                struct type* exp_type = expression_analyser(dec->children[2]);
-                if (!type_eq(actual_type, exp_type))
-                    pr_err(5, dec->children[1]->lineno, "Initializing '%s' with an expression of incompatible type '%s'", actual_type->obj.id, exp_type->obj.id);
-                else {
-                    /* TODO: Assignment code */
+            struct symbol* sym = variable_declaration(dec->children[0], base_type);
+            if (sym) {
+                if (dec->nr_children == 3) {
+                    /* Process assign */
+                    struct exp_attr* attr = expression_analyser(dec->children[2]);
+                    struct type* exp_type = attr->type;
+                    if (!type_eq(sym->type, exp_type))
+                        pr_err(5, dec->children[1]->lineno, "Initializing '%s' with an expression of incompatible type '%s'", sym->type->obj.id, exp_type->obj.id);
+                    else {
+                        /* TODO: Assignment code */
+                        sym->val_kind = attr->value_kind;
+                        sym->val = attr->val;
+                    }
                 }
             }
             if (dec_list->nr_children == 3)
@@ -573,7 +594,7 @@ void statement_analyser(struct node* stmt) {
         comp_st_analyser(stmt->children[0]);
     } else if (stmt->nr_children == 3) {
         /* Stmt -> RETURN Exp SEMI */
-        struct type* ret_type = expression_analyser(stmt->children[1]);
+        struct type* ret_type = expression_analyser(stmt->children[1])->type;
         if (!type_eq(ret_type, cur_func->ret_type))
             pr_err(8, stmt->children[1]->lineno, "Type mismatched for return");
     } else if (stmt->children[0]->ntype == IF) {
@@ -593,10 +614,12 @@ void if_statement_analyser(struct node* stmt) {
     /* Stmt -> IF LP Exp RP Stmt */
     /* Stmt -> IF LP Exp RP Stmt ELSE Stmt */
     struct node* exp = stmt->children[2];
-    struct type* cond_type = expression_analyser(exp);
-    if (!type_eq(cond_type, search_type("int")))
+    struct exp_attr* exp_attr = expression_analyser(exp);
+    struct type* cond_type = exp_attr->type;
+    if (!type_eq(cond_type, get_int_type()))
         /* TODO: */
         pr_err(114514, exp->lineno, "Bad type in condition expression");
+    /* TODO: use exp_attr to do branch optimization */
     statement_analyser(stmt->children[4]);
     if (stmt->nr_children == 7) {
         statement_analyser(stmt->children[6]);
@@ -607,64 +630,200 @@ void while_statement_analyser(struct node* stmt) {
     assert(stmt->ntype == STMT);
     /* Stmt -> WHILE LP Exp RP Stmt */
     struct node* exp = stmt->children[2];
-    struct type* cond_type = expression_analyser(exp);
-    if (!type_eq(cond_type, search_type("int")))
+    struct exp_attr* exp_attr = expression_analyser(exp);
+    struct type* cond_type = exp_attr->type;
+    if (!type_eq(cond_type,get_int_type()))
         /* TODO: */
         pr_err(114514, exp->lineno, "Bad type in condition expression");
+    /* TODO: use exp_attr to do branch optimization */
     statement_analyser(stmt->children[4]);
 }
 
-struct type* expression_analyser(struct node* exp) {
+struct exp_attr* expression_analyser(struct node* exp) {
     assert(exp->ntype == EXP);
-    struct type* ret;
+    struct exp_attr* attr = malloc(sizeof(struct exp_attr));
     switch (exp->nr_children) {
     case 1:
-        ret = expression_analyser_1(exp);
+        expression_analyser_1(exp, attr);
         break;
     case 2:
-        ret = expression_analyser_2(exp);
+        expression_analyser_2(exp, attr);
         break;
     case 3:
-        ret = expression_analyser_3(exp);
+        expression_analyser_3(exp, attr);
         break;
     case 4:
-        ret = expression_analyser_4(exp);
+        expression_analyser_4(exp, attr);
         break;
     default:
         assert(0);
     }
-    return ret;
+    exp->p_sattr = attr;
+    attr->parent = exp;
+    return attr;
 }
 
-inline struct type* expression_analyser_1(struct node* exp) {
+inline void expression_analyser_1(struct node* exp, struct exp_attr* attr) {
     if (exp->children[0]->ntype == ID) {
         /* EXP -> ID */
         struct symbol* sym = require_variable(exp->children[0]);
         if (!sym)
-            return NULL;
-        return sym->type;
+            return;
+        attr->kind = EXP_SYMBOL;
+        attr->type = sym->type;
+        attr->value_kind = sym->val_kind;
+        attr->val = sym->val;
+        attr->sym = sym;
+        return;
     }
     /* EXP -> INT | FLOAT */
-    if (exp->children[0]->ntype == INT)
-        return search_type("int");
-    if (exp->children[0]->ntype == FLOAT)
-        return search_type("float");
-}
-
-inline struct type* expression_analyser_2(struct node* exp) {
-    /* EXP -> MINUS EXP | NOT EXP */
-    return expression_analyser(exp->children[1]);
-}
-
-inline struct type* expression_analyser_3(struct node* exp) {
-    if (exp->children[0]->ntype == EXP) {
-        /* Arithmetic operations */
-        if (exp->children[1]->ntype == ASSIGNOP) {
-
-        }
+    attr->kind = EXP_ARITHMETIC;
+    attr->val = exp->children[0]->lattr.value;
+    if (exp->children[0]->ntype == INT) {
+        attr->type = get_int_type();
+        attr->value_kind = VALUE_INT;
+    } else {
+        attr->type = get_float_type();
+        attr->value_kind = VALUE_FLOAT;
     }
 }
 
-inline struct type* expression_analyser_4(struct node* exp) {
+inline void expression_analyser_2(struct node* exp, struct exp_attr* attr) {
+    /* EXP -> MINUS EXP | NOT EXP */
+    struct exp_attr* exp_attr = expression_analyser(exp->children[1]);
+    attr->kind = EXP_ARITHMETIC;
+    attr->type = exp_attr->type; /* TODO: type check */
+    attr->value_kind = exp_attr->value_kind;
+    /* TODO: static value calculation */
+}
 
+inline void expression_analyser_3(struct node* exp, struct exp_attr* attr) {
+    /* Assignment and Arithmetic operations */
+    if (exp->children[0]->ntype == EXP && exp->children[2]->ntype == EXP) {
+        attr->kind = EXP_ARITHMETIC;
+        struct node* exp1 = exp->children[0];
+        struct node* op = exp->children[1];
+        struct node* exp2 = exp->children[2];
+        struct exp_attr* exp1_attr = expression_analyser(exp1);
+        struct exp_attr* exp2_attr = expression_analyser(exp2);
+        if (op->ntype == ASSIGNOP) {
+            if (exp1_attr->kind == EXP_ARITHMETIC)
+                pr_err(6, exp1->lineno, "The left-hand side of an assignment must be a variable");
+            else if (!type_eq(exp1_attr->type, exp2_attr->type))
+                pr_err(5, op->lineno, "Type mismatched for assignment");
+            else {
+                /* TODO: Assignment */
+                attr->type = exp1_attr->type;
+                /* TODO: value */
+            }
+            return;
+        }
+        if (!type_eq_arithmetic(exp1_attr->type, exp2_attr->type))
+            pr_err(7, op->lineno, "Type mismatched for operands");
+        else {
+            /* TODO: Assignment */
+            attr->type = exp1_attr->type;
+            /* TODO: value */
+        }
+        return;
+    }
+
+    /* Exp -> LP Exp RP */
+    if (exp->children[0]->ntype == LP) {
+        struct exp_attr* exp_attr = expression_analyser(exp->children[1]);
+        attr->kind = EXP_ARITHMETIC;
+        attr->type = exp_attr->type;
+        /* TODO: value */
+        return;
+    }
+
+    /* Exp -> Exp DOT ID */
+    if (exp->children[1]->ntype == DOT) {
+        struct node* struc = exp->children[0];
+        struct node* field_id = exp->children[2];
+        struct exp_attr* exp_attr = expression_analyser(struc);
+        if (!exp_attr->type)
+            /* Not a valid expression, skip it. */
+            return;
+        if (exp_attr->type->kind != TYPE_STRUCT) {
+            /* Not a structure, skip it. */
+            pr_err(13, exp->children[1]->lineno, "Expression before '.' is not a structure variable");
+            return;
+        }
+        struct var_list* field = require_field(field_id);
+        if (!field) {
+            /* Error has been reported. */
+            return;
+        }
+        attr->kind = EXP_FIELD_ACCESS;
+        attr->type = field->type;
+        attr->value_kind = VALUE_NAC;
+        attr->field = field;
+        return;
+    }
+
+    /* Exp -> ID LP RP */
+    if (exp->children[0]->ntype == ID) {
+        function_call_analyser(exp, attr);
+        return;
+    }
+
+    assert(0);
+}
+
+inline void expression_analyser_4(struct node* exp, struct exp_attr* attr) {
+    /* Exp -> ID LP Args RP */
+    if (exp->children[0]->ntype == ID) {
+        function_call_analyser(exp, attr);
+        return;
+    }
+
+    /* Exp -> Exp LB Exp RB */
+    if (exp->children[1]->ntype == LB) {
+        struct node* arr = exp->children[0];
+        struct node* idx = exp->children[2];
+        struct exp_attr* arr_attr = expression_analyser(arr);
+        struct exp_attr* idx_attr = expression_analyser(idx);
+        if (!arr_attr->type)
+            /* Not a valid expression, skip it. */
+            return;
+        if (!idx_attr->type)
+            /* Not a valid expression, skip it. */
+            return;
+        if (arr_attr->type->kind != TYPE_ARRAY) {
+            pr_err(10, arr->lineno, "Expression before '[]' is not an array");
+            return;
+        }
+        if (idx_attr->type->kind != TYPE_BASIC || idx_attr->type->base != TYPE_INT) {
+            pr_err(12, idx->lineno, "Expression in '[]' is not an integer");
+            return;
+        }
+        attr->kind = EXP_ARRAY_ACCESS;
+        attr->type = arr_attr->type->elem;
+        attr->value_kind = VALUE_NAC;
+        // attr->index = idx_attr->type
+        /* TODO: value */
+        return;
+    }
+
+    assert(0);
+}
+
+void function_call_analyser(struct node* exp, struct exp_attr* attr) {
+    assert(exp->children[0]->ntype == ID);
+    struct func* func = require_function(exp->children[0]);
+    if (!func)
+        /* Error has been reported. */
+        return;
+
+    
+
+    /* TODO: parameter check */
+
+
+    // if (exp->nr_children == 4)
+
+    attr->kind = EXP_ARITHMETIC;
+    attr->type = func->ret_type;
+    attr->value_kind = VALUE_NAC;
 }

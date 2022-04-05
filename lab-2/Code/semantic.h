@@ -30,9 +30,10 @@ void function(struct node* ext_def);
 
 bool func_eq(struct func* func1, struct func* func2);
 bool type_eq(struct type* type1, struct type* type2);
+bool type_eq_arithmetic(struct type* type1, struct type* type2);
 
 struct type* var_dec_analyser(struct node* var_dec, struct type* type, struct node** id);
-struct type* variable_declaration(struct node* var_dec, struct type* type);
+struct symbol* variable_declaration(struct node* var_dec, struct type* type);
 void field_declaration(struct node* var_dec, struct type* type, struct type* struct_parent);
 void parameter_declaration(struct node* var_dec, struct type* type, struct func* func_parent, bool func_def);
 
@@ -47,10 +48,11 @@ void while_statement_analyser(struct node* stmt);
  * Young and simple type checkers. 
  * Will re-write in Lab3.
  */
-struct type* expression_analyser(struct node* exp);
-struct type* expression_analyser_1(struct node* exp);
-struct type* expression_analyser_2(struct node* exp);
-struct type* expression_analyser_3(struct node* exp);
-struct type* expression_analyser_4(struct node* exp);
+struct exp_attr* expression_analyser(struct node* exp);
+void expression_analyser_1(struct node* exp, struct exp_attr* attr);
+void expression_analyser_2(struct node* exp, struct exp_attr* attr);
+void expression_analyser_3(struct node* exp, struct exp_attr* attr);
+void expression_analyser_4(struct node* exp, struct exp_attr* attr);
+void function_call_analyser(struct node* exp, struct exp_attr* attr);
 
 #endif /* SEMANTIC_H */

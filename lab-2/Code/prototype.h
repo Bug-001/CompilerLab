@@ -72,6 +72,8 @@ struct func {
 struct type* alloc_type(const char* id);
 bool insert_type(struct type* type);
 struct type* search_type(const char* id);
+struct type* get_int_type();
+struct type* get_float_type();
 
 struct func* alloc_func(const char* id);
 struct func* search_func(const char* id);
