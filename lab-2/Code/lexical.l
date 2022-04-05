@@ -44,10 +44,10 @@ dec             0|[1-9]{dec_digit}*
 oct             0[0-7]*
 hex             (0x|0X)[0-9a-fA-F]*
 norm_float      {dec_digit}+\.{dec_digit}+
-/* sci_float_base  ({dec_digit}+\.{dec_digit}*)|(\.{dec_digit}+) */
-/* sci_float       {sci_float_base}[eE](\-|\+)?{dec_digit}+ */
+sci_float_base  ({dec_digit}+\.{dec_digit}*)|(\.{dec_digit}+)
+sci_float       {sci_float_base}[eE](\-|\+)?{dec_digit}+
 id              {alpha_}({alpha_}|{dec_digit}){0,31}
-/* comment         \/\*([^*]|(\*+[^*\/]))*\*+\/|\/\/.* */
+comment         \/\*([^*]|(\*+[^*\/]))*\*+\/|\/\/.*
 relop           ">"|"<"|">="|"<="|"=="|"!="
 
 %option yylineno
@@ -56,8 +56,8 @@ relop           ">"|"<"|">="|"<="|"=="|"!="
 {dec}         { gen_node_and_yield(INT); }
 {oct}         { gen_node_and_yield(INT); }
 {hex}         { gen_node_and_yield(INT); }
-  /* {norm_float}|{sci_float} {  */
-{norm_float}  { gen_node_and_yield(FLOAT); }
+{norm_float}|{sci_float} { gen_node_and_yield(FLOAT); }
+  /* {norm_float}  { gen_node_and_yield(FLOAT); } */
 "struct"      { gen_node_and_yield(STRUCT); }
 "return"      { gen_node_and_yield(RETURN); }
 "if"          { gen_node_and_yield(IF); }
@@ -65,7 +65,7 @@ relop           ">"|"<"|">="|"<="|"=="|"!="
 "while"       { gen_node_and_yield(WHILE); }
 "int"         { gen_node_and_yield(TYPE); }
 "float"       { gen_node_and_yield(TYPE); }
-  /* {comment}   { } */
+{comment}     { }
 {id}          { gen_node_and_yield(ID); }
 ";"           { gen_node_and_yield(SEMI); }
 ","           { gen_node_and_yield(COMMA); }
@@ -85,13 +85,13 @@ relop           ">"|"<"|">="|"<="|"=="|"!="
 "]"           { gen_node_and_yield(RB); }
 "{"           { gen_node_and_yield(LC); }
 "}"           { gen_node_and_yield(RC); }
-  /* "/*"        { ++has_error; char c; while ((c = input())); 
-  #ifdef L1_HARD
-                printf("Error Type A at Line %d\n", yylineno);
-  #else
-                printf("Error type A at Line %d: unterminated comment.\n", yylineno);
-  #endif
-              } */
+"/*"        { ++has_error; char c; while ((c = input())); 
+#ifdef L1_HARD
+              printf("Error Type A at Line %d\n", yylineno);
+#else
+              printf("Error type A at Line %d: unterminated comment.\n", yylineno);
+#endif
+            }
 \n          { 
   yycolumn = 1;
 #ifdef LEXICAL_DEBUG
