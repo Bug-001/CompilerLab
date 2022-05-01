@@ -10,3 +10,6 @@ report.pdf
 *.cmm
 !test1.cmm
 !test2.cmm
+__pycache__
+archive
+*.log
