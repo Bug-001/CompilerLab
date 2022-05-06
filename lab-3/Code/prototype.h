@@ -75,4 +75,8 @@ struct var_list *search_field(const char *id, struct type *type);
 bool insert_struct_field(struct var_list *field, struct type *type);
 bool insert_func_args(struct var_list *arg, struct func *func);
 
+bool func_eq(struct func *func1, struct func *func2);
+bool type_eq(struct type *type1, struct type *type2);
+bool type_eq_arithmetic(struct type *type1, struct type *type2);
+
 #endif

@@ -3,6 +3,7 @@
 #include "object.h"
 #include "rbtree.h"
 #include "utils.h"
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -151,4 +152,69 @@ bool insert_func_args(struct var_list *arg, struct func *func)
 	func->args = arg;
 	++func->nr_args;
 	return true;
+}
+
+bool func_eq(struct func *func1, struct func *func2)
+{
+	assert(strcmp(func1->obj.id, func2->obj.id) == 0);
+	struct var_list *args1 = func1->args;
+	struct var_list *args2 = func2->args;
+	while (args1 && args2) {
+		assert(args1->kind == FUNC_PARAM_LIST);
+		assert(args2->kind == FUNC_PARAM_LIST);
+		if (!type_eq(args1->type, args2->type))
+			return false;
+		args1 = args1->pred;
+		args2 = args2->pred;
+	}
+	if (args1 || args2)
+		return false;
+	if (!type_eq(func1->ret_type, func2->ret_type))
+		return false;
+	return true;
+}
+
+bool type_eq(struct type *type1, struct type *type2)
+{
+	/* Assumption: Error type equals to any type. */
+	if (!type1 || !type2)
+		return true;
+	if (type1->kind != type2->kind)
+		return false;
+	if (type1->kind == TYPE_BASIC)
+		return type1->base == type2->base;
+	if (type1->kind == TYPE_ARRAY)
+		return type_eq(type1->elem, type2->elem);
+	if (type1->kind == TYPE_STRUCT) {
+		if (strcmp(type1->obj.id, type2->obj.id) == 0)
+			return true;
+#ifdef LAB_2_3
+		struct var_list *field1 = type1->field;
+		struct var_list *field2 = type2->field;
+		while (field1 && field2) {
+			assert(field1->kind == STRUCT_FIELD_LIST);
+			assert(field2->kind == STRUCT_FIELD_LIST);
+			if (!type_eq(field1->type, field2->type))
+				return false;
+			field1 = field1->pred;
+			field2 = field2->pred;
+		}
+		if (field1 || field2)
+			return false;
+		return true;
+#else
+		return false;
+#endif
+	}
+
+	return false;
+}
+
+bool type_eq_arithmetic(struct type *type1, struct type *type2)
+{
+	if (!type1 || !type2)
+		return true;
+	if (type1->kind != TYPE_BASIC || type2->kind != TYPE_BASIC)
+		return false;
+	return type1->base == type2->base;
 }
