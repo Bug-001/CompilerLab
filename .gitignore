@@ -13,3 +13,4 @@ report.pdf
 __pycache__
 archive
 *.log
+out.ir

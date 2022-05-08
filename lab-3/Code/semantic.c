@@ -1,5 +1,6 @@
 #include "config.h"
 #include "exp.h"
+#include "ir.h"
 #include "node.h"
 #include "prototype.h"
 #include "semantic.h"
@@ -398,6 +399,8 @@ void function(struct node *ext_def)
 	if (func_def) {
 		cur_func = func;
 		__comp_st_analyser(ext_def->children[2]);
+		if (!has_error)
+			function_translator(ext_def, func);
 		cur_func = NULL;
 	}
 
@@ -430,7 +433,8 @@ struct type *var_dec_analyser(struct node *var_dec, struct type *type,
 		struct type *container = alloc_type(NULL);
 		container->kind = TYPE_ARRAY;
 		container->elem = actual_type;
-		container->size = var_dec->children[2]->lattr.value.i_val;
+		container->length = var_dec->children[2]->lattr.value.i_val;
+		container->size = container->length * actual_type->size;
 		actual_type = container;
 		var_dec = var_dec->children[0];
 	}
@@ -496,8 +500,10 @@ void parameter_declaration(struct node *var_dec, struct type *type,
 		struct var_list *arg = alloc_var(id->lattr.info);
 		arg->type = actual_type;
 		insert_func_args(arg, func_parent);
-		if (func_def)
-			insert_new_symbol(id->lattr.info, actual_type);
+		if (func_def) {
+			struct symbol *new_sym = insert_new_symbol(id->lattr.info, actual_type);
+			arg->var_no = new_sym->var_no;
+		}
 	}
 }
 
@@ -546,12 +552,6 @@ void __comp_st_analyser(struct node *comp_st)
 						       "Initializing '%s' with an expression of incompatible type '%s'",
 						       sym->type->obj.id,
 						       exp_type->obj.id);
-					else {
-						/* TODO: Assignment code */
-						sym->val_kind =
-							attr->value_kind;
-						sym->val = attr->val;
-					}
 				}
 			}
 			if (dec_list->nr_children == 3)
@@ -666,20 +666,16 @@ inline void expression_analyser_1(struct node *exp, struct exp_attr *attr)
 			return;
 		attr->kind = EXP_SYMBOL;
 		attr->type = sym->type;
-		attr->value_kind = sym->val_kind;
-		attr->val = sym->val;
-		attr->sym = sym;
+		attr->sym_no = sym->var_no;
 		return;
 	}
 	/* EXP -> INT | FLOAT */
 	attr->kind = EXP_ARITHMETIC;
-	attr->val = exp->children[0]->lattr.value;
+	// attr->val = exp->children[0]->lattr.value;
 	if (exp->children[0]->ntype == INT) {
 		attr->type = get_int_type();
-		attr->value_kind = VALUE_INT;
 	} else {
 		attr->type = get_float_type();
-		attr->value_kind = VALUE_FLOAT;
 	}
 }
 
@@ -689,8 +685,6 @@ inline void expression_analyser_2(struct node *exp, struct exp_attr *attr)
 	struct exp_attr *exp_attr = expression_analyser(exp->children[1]);
 	attr->kind = EXP_ARITHMETIC;
 	attr->type = exp_attr->type; /* TODO: type check */
-	attr->value_kind = exp_attr->value_kind;
-	/* TODO: static value calculation */
 }
 
 inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
@@ -759,7 +753,6 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 		}
 		attr->kind = EXP_FIELD_ACCESS;
 		attr->type = field->type;
-		attr->value_kind = VALUE_NAC;
 		attr->field = field;
 		return;
 	}
@@ -806,9 +799,6 @@ inline void expression_analyser_4(struct node *exp, struct exp_attr *attr)
 		}
 		attr->kind = EXP_ARRAY_ACCESS;
 		attr->type = arr_attr->type->elem;
-		attr->value_kind = VALUE_NAC;
-		// attr->index = idx_attr->type
-		/* TODO: value */
 		return;
 	}
 
@@ -881,5 +871,4 @@ void function_call_analyser(struct node *exp, struct exp_attr *attr)
 set_attr:
 	attr->kind = EXP_ARITHMETIC;
 	attr->type = func->ret_type;
-	attr->value_kind = VALUE_NAC;
 }

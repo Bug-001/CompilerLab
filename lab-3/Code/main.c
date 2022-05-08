@@ -1,3 +1,5 @@
+#include "config.h"
+#include "ir.h"
 #include "node.h"
 #include "semantic.h"
 #include <errno.h>
@@ -38,6 +40,12 @@ int main(int argc, char **argv)
 	semantic_analysis(tree);
 	if (has_error)
 		goto error_out;
+#endif
+
+#ifdef LAB_3
+	print_ir(stdout);
+	FILE *ir_out = fopen("out.ir", "wt");
+	print_ir(ir_out);
 #endif
 
 	return 0;

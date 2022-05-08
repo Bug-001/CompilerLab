@@ -14,4 +14,6 @@
 // #define LAB_2_2
 // #define LAB_2_3
 
+#define LAB_3
+
 #endif

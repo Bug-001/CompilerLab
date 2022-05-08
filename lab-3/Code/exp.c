@@ -13,6 +13,8 @@ static struct symbol_table {
 
 static struct symbol_table *cur_table = &symbol_table_stack;
 
+static int sym_no = 0;
+
 struct symbol *search_symbol(const char *id)
 {
 	struct symbol_table *table = cur_table;
@@ -37,6 +39,7 @@ struct symbol *insert_new_symbol(const char *id, struct type *type)
 	if (!sym)
 		return NULL;
 	sym->type = type;
+	sym->var_no = sym_no++;
 	insert_object(&cur_table->table, sym);
 	return sym;
 }

@@ -39,8 +39,7 @@ struct value {
 struct symbol {
 	struct object obj;
 	struct type *type;
-	enum value_type val_kind;
-	struct value val;
+	int var_no;	// for IR generator
 };
 
 // struct arithmetic {
@@ -53,11 +52,10 @@ struct exp_attr {
 	enum exp_type kind;
 	struct type *type;
 	struct node *parent;
-	enum value_type value_kind;
-	struct value val;
+	struct operand *temp;
 	union {
 		/* for symbol */
-		struct symbol *sym;
+		int sym_no;
 		/* for field access */
 		struct var_list *field;
 		/* for array access */

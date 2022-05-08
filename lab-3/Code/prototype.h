@@ -14,6 +14,10 @@ enum var_list_kind { FUNC_PARAM_LIST, STRUCT_FIELD_LIST };
 struct var_list {
 	struct object obj;
 	enum var_list_kind kind;
+	union {
+		int offset;
+		int var_no;
+	};
 	struct type *type;
 	union {
 		struct type *type;
@@ -27,13 +31,14 @@ struct var_list {
 struct type {
 	struct object obj;
 	enum type_kind kind;
+	int size;
 	union {
 		/* for basic type */
 		enum basic_kind base;
 		/* for array */
 		struct {
 			struct type *elem;
-			int size;
+			int length;
 		};
 		/* for struct */
 		struct var_list *field;

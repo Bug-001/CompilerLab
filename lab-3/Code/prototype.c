@@ -12,11 +12,13 @@ static struct rb_root type_table = RB_ROOT;
 
 static struct type __int_type = { .obj.id = "int",
 				  .kind = TYPE_BASIC,
-				  .base = TYPE_INT };
+				  .base = TYPE_INT,
+				  .size = 4 };
 
 static struct type __float_type = { .obj.id = "float",
 				    .kind = TYPE_BASIC,
-				    .base = TYPE_FLOAT };
+				    .base = TYPE_FLOAT,
+				    .size = 4 };
 
 /* If id is NULL, a hidden id will be allocated. */
 struct type *alloc_type(const char *id)
@@ -57,6 +59,37 @@ inline struct type *get_float_type()
 
 static struct rb_root func_table = RB_ROOT;
 
+static struct func __builtin_cmm_read = {
+	.obj.id = "read",
+	.is_declared = true,
+	.is_defined = true,
+	.nr_args = 0,
+	.ret_type = &__int_type,
+	.args = NULL,
+	.dec_node_list = NULL
+};
+
+static struct func __builtin_cmm_write;
+
+static struct var_list __builtin_cmm_write_arg = {
+	.obj.id = "write_val",
+	.kind = FUNC_PARAM_LIST,
+	.type = &__int_type,
+	.parent.func = &__builtin_cmm_write,
+	.pred = NULL,
+	.succ = NULL
+};
+
+static struct func __builtin_cmm_write = {
+	.obj.id = "write",
+	.is_declared = true,
+	.is_defined = true,
+	.nr_args = 1,
+	.ret_type = &__int_type,
+	.args = &__builtin_cmm_write_arg,
+	.dec_node_list = NULL
+};
+
 struct func *alloc_func(const char *id)
 {
 	INIT_OBJECT(struct func, func, id);
@@ -65,6 +98,10 @@ struct func *alloc_func(const char *id)
 
 struct func *search_func(const char *id)
 {
+	if (strcmp(id, "read") == 0)
+		return &__builtin_cmm_read;
+	if (strcmp(id, "write") == 0)
+		return &__builtin_cmm_write;
 	return search_object(&func_table, id);
 }
 
@@ -132,9 +169,15 @@ bool insert_struct_field(struct var_list *field, struct type *type)
 	field->parent.type = type;
 	field->pred = type->field;
 	field->succ = NULL;
-	if (field->pred)
+	if (field->pred) {
 		field->pred->succ = field;
+		field->offset = field->pred->offset + field->pred->type->size;
+	} else {
+		field->offset = 0;
+	}
+		
 	type->field = field;
+	type->size += field->type->size;
 	return true;
 }
 
