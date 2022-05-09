@@ -7,15 +7,6 @@
 
 struct ir;
 
-struct temp_var {
-	struct ir *dec1, *dec2, *used;
-};
-
-struct label {
-	struct ir *dec;
-	int ref_count;
-};
-
 enum operand_type {
 	OPERAND_DUMMY = 0,
 	OPERAND_VAR,
@@ -32,19 +23,15 @@ struct operand {
 	union {
 		// For func
 		struct func *func;
-		// For label
-		struct label label;
 		// For const, temp, var, addr
 		struct {
 			struct type *value_type;
-			union {
-				// For const
-				struct value val;
-				// For temp
-				struct temp_var temp;
-			};
+			struct value val;
 		};
 	};
+	struct ir *dec;
+	int ref_count;
+	bool can_fold;
 };
 
 enum ir_type {
@@ -82,6 +69,7 @@ enum ir_type {
 
 struct ir {
 	enum ir_type type;
+	int addr_cnt;
 	struct operand *op1;
 	struct operand *op2;
 	struct operand *res;
@@ -93,13 +81,9 @@ struct ir_seg {
 	struct ir *tail;
 };
 
-struct ir *get_ir(enum ir_type type, struct operand *op1,
-		     struct operand *op2, struct operand *res);
-
-// struct ir *get_ir_param(struct type *sym_type, int sym_no);
-// struct ir *get_ir_def_func(struct func *func);
-
 void function_translator(struct node *ext_def, struct func *func);
+
+void optimize();
 
 void print_one_ir(FILE *fp, struct ir *ir);
 void print_ir(FILE *fp);

@@ -643,6 +643,7 @@ struct exp_attr *expression_analyser(struct node *exp)
 {
 	assert(exp->ntype == EXP);
 	struct exp_attr *attr = malloc(sizeof(struct exp_attr));
+	attr->useful = 0;
 	switch (exp->nr_children) {
 	case 1:
 		expression_analyser_1(exp, attr);
@@ -690,6 +691,7 @@ inline void expression_analyser_2(struct node *exp, struct exp_attr *attr)
 {
 	/* EXP -> MINUS EXP | NOT EXP */
 	struct exp_attr *exp_attr = expression_analyser(exp->children[1]);
+	attr->useful = exp_attr->useful;
 	attr->kind = EXP_ARITHMETIC;
 	attr->type = exp_attr->type; /* TODO: type check */
 }
@@ -712,10 +714,10 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 				pr_err(5, op->lineno,
 				       "Type mismatched for assignment");
 			else {
-				/* TODO: Assignment */
+				/* Assignment */
+				attr->useful = true;
 				attr->kind = exp1_attr->kind;
 				attr->type = exp1_attr->type;
-				/* TODO: value */
 			}
 			return;
 		}
@@ -723,9 +725,8 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 		if (!type_eq_arithmetic(exp1_attr->type, exp2_attr->type))
 			pr_err(7, op->lineno, "Type mismatched for operands");
 		else {
-			/* TODO: Assignment */
+			attr->useful = exp1_attr->useful || exp2_attr->useful;
 			attr->type = exp1_attr->type;
-			/* TODO: value */
 		}
 		return;
 	}
@@ -734,9 +735,9 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 	if (exp->children[0]->ntype == LP) {
 		struct exp_attr *exp_attr =
 			expression_analyser(exp->children[1]);
+		attr->useful = exp_attr->useful;
 		attr->kind = EXP_ARITHMETIC;
 		attr->type = exp_attr->type;
-		/* TODO: value */
 		return;
 	}
 
@@ -760,6 +761,7 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 			/* Error has been reported. */
 			return;
 		}
+		attr->useful = exp_attr->useful;
 		attr->kind = EXP_FIELD_ACCESS;
 		attr->type = field->type;
 		attr->field = field;
@@ -768,6 +770,7 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 
 	/* Exp -> ID LP RP */
 	if (exp->children[0]->ntype == ID) {
+		attr->useful = true;
 		function_call_analyser(exp, attr);
 		return;
 	}
@@ -779,6 +782,7 @@ inline void expression_analyser_4(struct node *exp, struct exp_attr *attr)
 {
 	/* Exp -> ID LP Args RP */
 	if (exp->children[0]->ntype == ID) {
+		attr->useful = true;
 		function_call_analyser(exp, attr);
 		return;
 	}
@@ -806,6 +810,7 @@ inline void expression_analyser_4(struct node *exp, struct exp_attr *attr)
 			       "Expression in '[]' is not an integer");
 			return;
 		}
+		attr->useful = arr_attr->useful || idx_attr->useful;
 		attr->kind = EXP_ARRAY_ACCESS;
 		attr->type = arr_attr->type->elem;
 		return;

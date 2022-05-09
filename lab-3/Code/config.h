@@ -4,6 +4,7 @@
 // #define LEXICAL_DEBUG
 // #define SYNTAX_DEBUG
 // #define L1_HARD
+// #define IR_OPTIMIZE_DEBUG
 
 // #define LAB_1
 #define LAB_1_1

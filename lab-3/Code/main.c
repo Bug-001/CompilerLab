@@ -32,15 +32,16 @@ int main(int argc, char **argv)
 	yyrestart(f);
 	yyparse();
 	if (has_error)
-		goto error_out;
+		goto out;
 #ifdef LAB_1
 	print_tree(tree);
+	goto out;
 #else
-
 	has_error = 0;
 	semantic_analysis(tree);
 	if (has_error)
-		goto error_out;
+		goto out;
+	optimize();
 #endif
 
 #ifdef LAB_3
@@ -59,6 +60,6 @@ int main(int argc, char **argv)
 terminated:
 	printf("compilation terminated.\n");
 
-error_out:
+out:
 	return 0;
 }

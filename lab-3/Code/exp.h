@@ -50,9 +50,9 @@ struct symbol {
 
 struct exp_attr {
 	enum exp_type kind;
+	bool useful;
 	struct type *type;
 	struct node *parent;
-	struct operand *temp;
 	union {
 		/* for symbol */
 		int sym_no;

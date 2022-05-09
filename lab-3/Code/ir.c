@@ -1,5 +1,6 @@
-#include "ir.h"
+#include "config.h"
 #include "exp.h"
+#include "ir.h"
 #include "node.h"
 #include "prototype.h"
 #include "syntax.tab.h"
@@ -30,54 +31,59 @@ struct ir_seg expression_translator_4(struct node *exp, struct operand *place);
 struct ir_seg condition_translator(struct node *exp, struct operand *label_true, struct operand *label_false);
 struct ir_seg function_call_translator(struct node *exp, struct operand *place);
 
+struct operand *new_operand(enum operand_type type, int no)
+{
+	struct operand *ret = malloc(sizeof(struct operand));
+	ret->type = type;
+	ret->no = no;
+	ret->dec = NULL;
+	ret->ref_count = 0;
+	ret->can_fold = true;
+	return ret;
+}
+
 struct operand *new_temp(struct type *type)
 {
-	struct operand *tmp = malloc(sizeof(struct operand));
-	tmp->type = OPERAND_TEMP;
-	tmp->no = temp_cnt++;
+	struct operand *tmp = new_operand(OPERAND_TEMP, temp_cnt++);
 	tmp->value_type = type;
-	tmp->temp.dec1 = NULL;
-	tmp->temp.dec2 = NULL;
-	tmp->temp.used = NULL;
 
 	return tmp;
 }
 
 struct operand *new_var(struct type *sym_type, int sym_no)
 {
-	struct operand *var = malloc(sizeof(struct operand));
-	var->type = OPERAND_VAR;
-	var->no = sym_no;
-	var->value_type = sym_type;
+	// TODO: var array
+	static struct operand *var_cache[100000];
 
-	return var;
+	int abs_sym_no = sym_no;
+	if (sym_no < 0)
+		abs_sym_no = -sym_no;
+	if (var_cache[abs_sym_no] == NULL) {
+		struct operand *var = new_operand(OPERAND_VAR, sym_no);
+		var->value_type = sym_type;
+		var_cache[abs_sym_no] = var;
+	}
+	return var_cache[abs_sym_no];
 }
 
 struct operand *new_addr(struct type *sym_type)
 {
-	struct operand *addr = malloc(sizeof(struct operand));
-	addr->type = OPERAND_ADDR;
+	struct operand *addr = new_operand(OPERAND_ADDR, addr_cnt++);
 	addr->value_type = sym_type;
-	addr->no = addr_cnt++;
 
 	return addr;
 }
 
 struct operand *new_label()
 {
-	struct operand *new_lbl = malloc(sizeof(struct operand));
-	new_lbl->type = OPERAND_LABEL;
-	new_lbl->no = label_cnt++;
-	new_lbl->label.ref_count = 0;
-	new_lbl->label.dec = NULL;
+	struct operand *new_lbl = new_operand(OPERAND_LABEL, label_cnt++);
 
 	return new_lbl;
 }
 
 struct operand *new_const(struct type *type, struct value val)
 {
-	struct operand *const_val = malloc(sizeof(struct operand));
-	const_val->type = OPERAND_CONST;
+	struct operand *const_val = new_operand(OPERAND_CONST, 0);
 	const_val->value_type = type;
 	const_val->val = val;
 
@@ -86,8 +92,7 @@ struct operand *new_const(struct type *type, struct value val)
 
 struct operand *new_func(struct func *func)
 {
-	struct operand *op_func = malloc(sizeof(struct operand));
-	op_func->type = OPERAND_FUNC;
+	struct operand *op_func = new_operand(OPERAND_FUNC, 0);
 	op_func->func = func;
 
 	return op_func;
@@ -143,41 +148,8 @@ enum ir_type node_to_irtype(struct node *node)
 	}
 }
 
-void ir_seg_append_seg(struct ir_seg *seg, struct ir_seg new_seg)
-{
-	if (new_seg.head == NULL)
-		return;
-	if (seg->head == NULL) {
-		seg->head = new_seg.head;
-		seg->tail = new_seg.tail;
-		return;
-	}
-	seg->tail->next = new_seg.head;
-	seg->tail = new_seg.tail;
-}
-
-void ir_seg_append_ir(struct ir_seg *seg, struct ir *new_ir)
-{
-	if (seg->head == NULL) {
-		seg->head = new_ir;
-		seg->tail = new_ir;
-		return;
-	}
-	seg->tail->next = new_ir;
-	seg->tail = new_ir;
-}
-
-void ir_seg_create_ir(struct ir_seg *seg, enum ir_type type, struct operand *op1,
-		     struct operand *op2, struct operand *res)
-{
-	struct ir *new_ir = get_ir(type, op1, op2, res);
-	ir_seg_append_ir(seg, new_ir);
-}
-
-void ir_commit(struct ir_seg *seg)
-{
-	ir_tail->next = seg->head;
-	ir_tail = seg->tail;
+bool is_if_goto(enum ir_type type) {
+	return type >= IR_IF_LT_GOTO && type <= IR_IF_NE_GOTO;
 }
 
 struct ir *get_ir(enum ir_type type, struct operand *op1,
@@ -191,34 +163,78 @@ struct ir *get_ir(enum ir_type type, struct operand *op1,
 
 	new_ir->prev = NULL;
 	new_ir->next = NULL;
+	new_ir->addr_cnt = 0;
 
-	// struct ir **append_tail = ir_stack_top ? &ir_stack_top->tail : &ir_tail;
-
-	// (*append_tail)->next = new_ir;
-	// new_ir->prev = *append_tail;
-	// new_ir->next = NULL;
-	// *append_tail = new_ir;
-
-	// print_one_ir(stdout, new_ir);
-	// printf("\n");
-
-	// if (op1 && op1->type == OPERAND_TEMP)
-	// TODO: set used and dec to enable optimization
+	/* Add dec or ref_count */
+	if (op1) {
+		op1->ref_count++;
+		new_ir->addr_cnt++;
+	}
+	if (op2) {
+		op2->ref_count++;
+		new_ir->addr_cnt++;
+	}
+	if (res) {
+		new_ir->addr_cnt++;
+		if (is_if_goto(type)) res->ref_count++;
+		else if (!res->dec) res->dec = new_ir;
+		else res->can_fold = false;
+	}
 
 	return new_ir;
+}
+
+void ir_seg_append_seg(struct ir_seg *seg, struct ir_seg new_seg)
+{
+	if (new_seg.head == NULL)
+		return;
+	if (seg->head == NULL) {
+		seg->head = new_seg.head;
+		seg->tail = new_seg.tail;
+		return;
+	}
+	seg->tail->next = new_seg.head;
+	new_seg.head->prev = seg->tail;
+	seg->tail = new_seg.tail;
+}
+
+void ir_seg_append_ir(struct ir_seg *seg, struct ir *new_ir)
+{
+	if (seg->head == NULL) {
+		seg->head = new_ir;
+		seg->tail = new_ir;
+		return;
+	}
+	seg->tail->next = new_ir;
+	new_ir->prev = seg->tail;
+	seg->tail = new_ir;
+}
+
+void ir_seg_create_ir(struct ir_seg *seg, enum ir_type type, struct operand *op1,
+		     struct operand *op2, struct operand *res)
+{
+	struct ir *new_ir = get_ir(type, op1, op2, res);
+	ir_seg_append_ir(seg, new_ir);
+}
+
+void ir_commit(struct ir_seg *seg)
+{
+	ir_tail->next = seg->head;
+	seg->head->prev = ir_tail;
+	ir_tail = seg->tail;
 }
 
 struct ir *get_ir_label(struct operand *label)
 {
 	struct ir *new_ir = get_ir(IR_LABEL, NULL, NULL, label);
-	label->label.dec = new_ir;
+	label->dec = new_ir;
 	return new_ir;
 }
 
 struct ir *get_ir_goto(struct operand *label)
 {
 	struct ir *new_ir = get_ir(IR_GOTO, label, NULL, NULL);
-	label->label.ref_count++;
+	label->ref_count++;
 	return new_ir;
 }
 
@@ -227,6 +243,11 @@ struct ir *get_ir_def_func(struct func *func)
 	struct operand *op_func = malloc(sizeof(struct operand));
 	op_func->type = OPERAND_FUNC;
 	op_func->func = func;
+	op_func->ref_count = 0;
+
+	if (strcmp(func->obj.id, "main") == 0) {
+		op_func->ref_count = 1;
+	}
 
 	return get_ir(IR_FUNC_DEF, NULL, NULL, op_func);
 }
@@ -266,10 +287,12 @@ struct ir_seg declaration_translator(struct node *dec, struct type *dec_type, in
 	/* Dec -> VarDec ASSIGNOP Exp */
 	struct operand *op_local_var = new_var(dec_type, var_no);
 	struct ir_seg seg = {0};
-	if (dec_type->kind != TYPE_BASIC) {
-		/* DEC x [size] */
-		ir_seg_create_ir(&seg, IR_DEC, new_int_const(dec_type->size), NULL, op_local_var);
-	}
+	// if (dec_type->kind != TYPE_BASIC) {
+	// 	/* DEC x [size] */
+	// 	ir_seg_create_ir(&seg, IR_DEC, new_int_const(dec_type->size), NULL, op_local_var);
+	// }
+	/* will remove DEC x 4 in optimization */
+	ir_seg_create_ir(&seg, IR_DEC, new_int_const(dec_type->size), NULL, op_local_var);
 	if (dec->nr_children == 3) {
 		struct operand *tmp = new_temp(dec_type);
 		ir_seg_append_seg(&seg, expression_translator(dec->children[2], tmp));
@@ -331,8 +354,11 @@ struct ir_seg statement_translator(struct node *stmt)
 	assert(stmt->ntype == STMT);
 	if (stmt->nr_children == 2) {
 		/* Stmt -> Exp SEMI */
-		struct operand *tmp = new_temp(stmt->children[0]->p_sattr->type);
-		ir_seg_append_seg(&seg, expression_translator(stmt->children[0], tmp));
+		if (stmt->children[0]->p_sattr->useful) {
+			/* Pre-optimization: only translate useful expression */
+			struct operand *tmp = new_temp(stmt->children[0]->p_sattr->type);
+			ir_seg_append_seg(&seg, expression_translator(stmt->children[0], tmp));
+		}
 	} else if (stmt->nr_children == 1) {
 		/* Stmt -> CompSt */
 		ir_seg_append_seg(&seg, comp_st_translator(stmt->children[0]));
@@ -743,10 +769,10 @@ void operand_set_buf(char *buf, struct operand *op)
 	switch (op->type) {
 	case OPERAND_FUNC:
 		strcpy(buf, op->func->obj.id);
-		return;
+		break;
 	case OPERAND_LABEL:
 		sprintf(buf, "label%d", op->no);
-		return;
+		break;
 	case OPERAND_CONST:
 		if (op->value_type == get_int_type())
 			sprintf(buf, "#%d", op->val.i_val);
@@ -755,16 +781,22 @@ void operand_set_buf(char *buf, struct operand *op)
 		return;
 	case OPERAND_TEMP:
 		sprintf(buf, "temp%d", op->no);
-		return;
+		break;
 	case OPERAND_VAR:
 		sprintf(buf, "var%d", op->no < 0 ? -op->no : op->no);
-		return;
+		break;
 	case OPERAND_ADDR:
 		sprintf(buf, "addr%d", op->no < 0 ? -op->no : op->no);
-		return;
+		break;
 	case OPERAND_DUMMY:
 		strcpy(buf, "BAD");
 	}
+
+#ifdef IR_OPTIMIZE_DEBUG
+	char ref_buf[20];
+	sprintf(ref_buf, "(%d, %p)", op->ref_count, op);
+	strcat(buf, ref_buf);
+#endif
 }
 
 void print_one_ir(FILE *fp, struct ir *ir)
