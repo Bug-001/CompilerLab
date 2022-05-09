@@ -454,8 +454,12 @@ struct symbol *variable_declaration(struct node *var_dec, struct type *type)
 	struct type *actual_type;
 	struct node *id;
 	actual_type = var_dec_analyser(var_dec, type, &id);
-	if (check_variable(id))
-		return insert_new_symbol(id->lattr.info, actual_type);
+	if (check_variable(id)) {
+		struct symbol *new_sym = insert_new_symbol(id->lattr.info, actual_type);
+		id->lattr.sym_no = new_sym->var_no;
+		id->lattr.sym_type = actual_type;
+		return new_sym;
+	}
 	return NULL;
 }
 
@@ -502,6 +506,9 @@ void parameter_declaration(struct node *var_dec, struct type *type,
 		insert_func_args(arg, func_parent);
 		if (func_def) {
 			struct symbol *new_sym = insert_new_symbol(id->lattr.info, actual_type);
+			/* Set negative if it's an addr. */
+			if (actual_type && actual_type->kind != TYPE_BASIC)
+				new_sym->var_no = -new_sym->var_no;
 			arg->var_no = new_sym->var_no;
 		}
 	}
@@ -706,11 +713,13 @@ inline void expression_analyser_3(struct node *exp, struct exp_attr *attr)
 				       "Type mismatched for assignment");
 			else {
 				/* TODO: Assignment */
+				attr->kind = exp1_attr->kind;
 				attr->type = exp1_attr->type;
 				/* TODO: value */
 			}
 			return;
 		}
+		attr->kind = EXP_ARITHMETIC;
 		if (!type_eq_arithmetic(exp1_attr->type, exp2_attr->type))
 			pr_err(7, op->lineno, "Type mismatched for operands");
 		else {

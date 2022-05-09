@@ -11,8 +11,8 @@
 #define LAB_1_3
 
 #define LAB_2_1
-// #define LAB_2_2
-// #define LAB_2_3
+#define LAB_2_2
+#define LAB_2_3
 
 #define LAB_3
 

@@ -38,6 +38,10 @@ struct lexical_attr {
 	union {
 		struct value value;
 		enum relop_type relop_type;
+		struct {
+			int sym_no;
+			struct type *sym_type;
+		};
 	};
 };
 

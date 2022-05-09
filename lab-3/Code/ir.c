@@ -12,13 +12,14 @@
 struct ir ir_list = { .type = IR_DUMMY, .prev = NULL, .next = NULL };
 struct ir *ir_tail = &ir_list;
 
-int label_cnt = 0;
-int temp_cnt = 0;
+int label_cnt = 1;
+int temp_cnt = 1;
+int addr_cnt = 1;
 
 struct value zero = { .i_val = 0 };
 struct value one = { .i_val = 1 };
 
-struct ir_seg declaration_translator(struct node *dec, struct symbol *sym);
+struct ir_seg declaration_translator(struct node *dec, struct type *dec_type, int var_no);
 struct ir_seg statement_translator(struct node *stmt);
 struct ir_seg comp_st_translator(struct node *comp_st);
 struct ir_seg expression_translator(struct node *exp, struct operand *place);
@@ -29,7 +30,7 @@ struct ir_seg expression_translator_4(struct node *exp, struct operand *place);
 struct ir_seg condition_translator(struct node *exp, struct operand *label_true, struct operand *label_false);
 struct ir_seg function_call_translator(struct node *exp, struct operand *place);
 
-static struct operand *new_temp(struct type *type)
+struct operand *new_temp(struct type *type)
 {
 	struct operand *tmp = malloc(sizeof(struct operand));
 	tmp->type = OPERAND_TEMP;
@@ -42,7 +43,7 @@ static struct operand *new_temp(struct type *type)
 	return tmp;
 }
 
-static struct operand *new_var(struct type *sym_type, int sym_no)
+struct operand *new_var(struct type *sym_type, int sym_no)
 {
 	struct operand *var = malloc(sizeof(struct operand));
 	var->type = OPERAND_VAR;
@@ -52,16 +53,17 @@ static struct operand *new_var(struct type *sym_type, int sym_no)
 	return var;
 }
 
-static struct operand *new_addr(struct type *sym_type)
+struct operand *new_addr(struct type *sym_type)
 {
 	struct operand *addr = malloc(sizeof(struct operand));
 	addr->type = OPERAND_ADDR;
 	addr->value_type = sym_type;
+	addr->no = addr_cnt++;
 
 	return addr;
 }
 
-static struct operand *new_label()
+struct operand *new_label()
 {
 	struct operand *new_lbl = malloc(sizeof(struct operand));
 	new_lbl->type = OPERAND_LABEL;
@@ -72,7 +74,7 @@ static struct operand *new_label()
 	return new_lbl;
 }
 
-static struct operand *new_const(struct type *type, struct value val)
+struct operand *new_const(struct type *type, struct value val)
 {
 	struct operand *const_val = malloc(sizeof(struct operand));
 	const_val->type = OPERAND_CONST;
@@ -82,13 +84,19 @@ static struct operand *new_const(struct type *type, struct value val)
 	return const_val;
 }
 
-static struct operand *new_func(struct func *func)
+struct operand *new_func(struct func *func)
 {
 	struct operand *op_func = malloc(sizeof(struct operand));
 	op_func->type = OPERAND_FUNC;
 	op_func->func = func;
 
 	return op_func;
+}
+
+struct operand *new_int_const(int i_val)
+{
+	struct value val = {.i_val = i_val};
+	return new_const(get_int_type(), val);
 }
 
 #define zero_const new_const(get_int_type(), zero)
@@ -137,6 +145,8 @@ enum ir_type node_to_irtype(struct node *node)
 
 void ir_seg_append_seg(struct ir_seg *seg, struct ir_seg new_seg)
 {
+	if (new_seg.head == NULL)
+		return;
 	if (seg->head == NULL) {
 		seg->head = new_seg.head;
 		seg->tail = new_seg.tail;
@@ -178,6 +188,9 @@ struct ir *get_ir(enum ir_type type, struct operand *op1,
 	new_ir->op1 = op1;
 	new_ir->op2 = op2;
 	new_ir->res = res;
+
+	new_ir->prev = NULL;
+	new_ir->next = NULL;
 
 	// struct ir **append_tail = ir_stack_top ? &ir_stack_top->tail : &ir_tail;
 
@@ -224,13 +237,6 @@ struct ir *get_ir_param(struct type *sym_type, int sym_no)
 	return get_ir(IR_PARAM, NULL, NULL, op_param);
 }
 
-struct ir *get_ir_dec_var(struct type *sym_type, int sym_no)
-{
-	struct operand *op_local_var = new_var(sym_type, sym_no);
-	struct value var_size = {.i_val = sym_type->size};
-	return get_ir(IR_DEC, new_const(get_int_type(), var_size), NULL, op_local_var);
-}
-
 void function_translator(struct node *ext_def, struct func *func)
 {
 	struct ir_seg seg = {0};
@@ -254,21 +260,18 @@ void function_translator(struct node *ext_def, struct func *func)
 	ir_commit(&seg);
 }
 
-struct ir_seg declaration_translator(struct node *dec, struct symbol *sym)
+struct ir_seg declaration_translator(struct node *dec, struct type *dec_type, int var_no)
 {
 	/* Dec -> VarDec */
 	/* Dec -> VarDec ASSIGNOP Exp */
-	struct type *sym_type = sym->type;
-	int sym_no = sym->var_no;
-	struct operand *op_local_var = new_var(sym_type, sym_no);
+	struct operand *op_local_var = new_var(dec_type, var_no);
 	struct ir_seg seg = {0};
-	if (sym->type->kind != TYPE_BASIC) {
+	if (dec_type->kind != TYPE_BASIC) {
 		/* DEC x [size] */
-		struct value var_size = {.i_val = sym_type->size};
-		ir_seg_create_ir(&seg, IR_DEC, new_const(get_int_type(), var_size), NULL, op_local_var);
+		ir_seg_create_ir(&seg, IR_DEC, new_int_const(dec_type->size), NULL, op_local_var);
 	}
 	if (dec->nr_children == 3) {
-		struct operand *tmp = new_temp(sym->type);
+		struct operand *tmp = new_temp(dec_type);
 		ir_seg_append_seg(&seg, expression_translator(dec->children[2], tmp));
 		ir_seg_create_ir(&seg, IR_ASSIGN, tmp, NULL, op_local_var);
 	}
@@ -301,9 +304,8 @@ struct ir_seg comp_st_translator(struct node *comp_st)
 				var_dec = var_dec->children[0];
 			}
 			/* VarDec -> ID */
-			struct symbol *sym = search_symbol(var_dec->children[0]->lattr.info);
-			assert(sym);
-			ir_seg_append_seg(&seg, declaration_translator(dec, sym));
+			struct node *id = var_dec->children[0];
+			ir_seg_append_seg(&seg, declaration_translator(dec, id->lattr.sym_type, id->lattr.sym_no));
 			if (dec_list->nr_children == 3)
 				dec_list = dec_list->children[2];
 			else
@@ -397,7 +399,7 @@ struct ir_seg expression_translator(struct node *exp, struct operand *place)
 	}
 }
 
-inline struct ir_seg expression_translator_1(struct node *exp, struct operand *place)
+struct ir_seg expression_translator_1(struct node *exp, struct operand *place)
 {
 	struct ir_seg seg = {0};
 	struct exp_attr *attr = exp->p_sattr;
@@ -406,8 +408,14 @@ inline struct ir_seg expression_translator_1(struct node *exp, struct operand *p
 		struct operand *var = new_var(attr->type, attr->sym_no);
 		if (attr->type->kind == TYPE_BASIC)
 			ir_seg_create_ir(&seg, IR_ASSIGN, var, NULL, place);
-		else
-		 	ir_seg_create_ir(&seg, IR_REF, var, NULL, place);
+		else {
+			/* Get the address variable of array or structure named ID */
+			assert(place->type == OPERAND_ADDR);
+			if (attr->sym_no < 0)
+				ir_seg_create_ir(&seg, IR_ASSIGN, var, NULL, place);
+			else
+				ir_seg_create_ir(&seg, IR_REF, var, NULL, place);
+		}
 		return seg;
 	}
 	/* EXP -> INT | FLOAT */
@@ -417,14 +425,14 @@ inline struct ir_seg expression_translator_1(struct node *exp, struct operand *p
 	return seg;
 }
 
-inline struct ir_seg expression_translator_2(struct node *exp, struct operand *place)
+struct ir_seg expression_translator_2(struct node *exp, struct operand *place)
 {
 	struct ir_seg seg = {0};
 	struct exp_attr *attr = exp->p_sattr;
 	/* EXP -> MINUS EXP | NOT EXP */
 	if (exp->children[0]->ntype == MINUS) {
 		struct operand *tmp = new_temp(attr->type);
-		ir_seg_append_seg(&seg, expression_translator_1(exp->children[1], tmp));
+		ir_seg_append_seg(&seg, expression_translator(exp->children[1], tmp));
 		ir_seg_create_ir(&seg, IR_MINUS, zero_const, tmp, place);
 	} else if (exp->children[0]->ntype == NOT) {
 		struct operand *label1 = new_label();
@@ -440,7 +448,71 @@ inline struct ir_seg expression_translator_2(struct node *exp, struct operand *p
 	return seg;
 }
 
-inline struct ir_seg expression_translator_3(struct node *exp, struct operand *place)
+struct ir_seg assignment_translator(struct node *dst, struct node *src, struct operand *place)
+{
+	struct ir_seg seg = {0};
+	struct type *dst_type = dst->p_sattr->type;
+	struct type *src_type = src->p_sattr->type;
+	bool dst_is_addr = dst->p_sattr->kind != EXP_SYMBOL || dst_type->kind != TYPE_BASIC;
+	// bool src_is_addr = src->p_sattr->kind != EXP_SYMBOL && src->p_sattr->kind != EXP_ARITHMETIC;
+	bool src_is_addr = src_type->kind != TYPE_BASIC;
+
+	struct operand *dst_op, *src_op;
+
+	if (dst_is_addr) {
+		/* Get addr of dst for dereference. */
+		dst_op = new_addr(dst_type);
+		ir_seg_append_seg(&seg, expression_translator(dst, dst_op));
+		if (src_is_addr) {
+			/* Array or structure copy. */
+			src_op = new_addr(src_type);
+			/* Get addr of src for dereference. */
+			ir_seg_append_seg(&seg, expression_translator(src, src_op));
+			/* Append memcpy code. */
+			int min_size;
+			if (src_type->size < dst_type->size)
+				min_size = src_type->size;
+			else
+			 	min_size = dst_type->size;
+			struct operand *offset = new_temp(get_int_type());
+			struct operand *cp_size = new_int_const(min_size);
+			struct operand *step = new_int_const(get_int_type()->size);
+			struct operand *tmp_buf = new_temp(get_int_type());
+			struct operand *label1 = new_label();
+			struct operand *label2 = new_label();
+			ir_seg_create_ir(&seg, IR_ASSIGN, zero_const, NULL, offset);
+			ir_seg_append_ir(&seg, get_ir_label(label1));
+			ir_seg_create_ir(&seg, IR_IF_GE_GOTO, offset, cp_size, label2);
+			ir_seg_create_ir(&seg, IR_LOAD, src_op, NULL, tmp_buf);
+			ir_seg_create_ir(&seg, IR_STORE, tmp_buf, NULL, dst_op);
+			ir_seg_create_ir(&seg, IR_PLUS, src_op, step, src_op);
+			ir_seg_create_ir(&seg, IR_PLUS, dst_op, step, dst_op);
+			ir_seg_create_ir(&seg, IR_PLUS, offset, step, offset);
+			ir_seg_append_ir(&seg, get_ir_goto(label1));
+			ir_seg_append_ir(&seg, get_ir_label(label2));
+		} else {
+			/* Store into the mem space pointed by dst. */
+			src_op = new_temp(src_type);
+			ir_seg_append_seg(&seg, expression_translator(src, src_op));
+			ir_seg_create_ir(&seg, IR_STORE, src_op, NULL, dst_op);
+		}
+	} else {
+		/* Store directly into variable dst. */
+		dst_op = new_var(dst_type, dst->p_sattr->sym_no);
+		src_op = new_temp(src_type);
+		/* src may be array access or field access, but as we pass a operand_temp, 
+		 * deference will be done in expression_translator.
+		 */
+		ir_seg_append_seg(&seg, expression_translator(src, src_op));
+		ir_seg_create_ir(&seg, IR_ASSIGN, src_op, NULL, dst_op);
+	}
+
+	ir_seg_create_ir(&seg, IR_ASSIGN, src_op, NULL, place);
+
+	return seg;
+}
+
+struct ir_seg expression_translator_3(struct node *exp, struct operand *place)
 {
 	struct ir_seg seg = {0};
 	/* Assignment and Arithmetic operations */
@@ -448,14 +520,9 @@ inline struct ir_seg expression_translator_3(struct node *exp, struct operand *p
 		struct node *exp1 = exp->children[0];
 		struct node *op = exp->children[1];
 		struct node *exp2 = exp->children[2];
-		assert(type_eq_arithmetic(exp1->p_sattr->type, exp2->p_sattr->type));
+		assert(type_eq(exp1->p_sattr->type, exp2->p_sattr->type));
 		if (op->ntype == ASSIGNOP) {
-			struct operand *tmp = new_temp(exp->p_sattr->type);
-			struct operand *var = new_var(exp1->p_sattr->type, exp1->p_sattr->sym_no);
-			ir_seg_append_seg(&seg, expression_translator(exp2, tmp));
-			// TODO: if var is field or array index, do dereference here.
-			ir_seg_create_ir(&seg, IR_ASSIGN, tmp, NULL, var);
-			ir_seg_create_ir(&seg, IR_ASSIGN, var, NULL, place);
+			ir_seg_append_seg(&seg, assignment_translator(exp1, exp2, place));
 			return seg;
 		}
 		if (op->ntype == RELOP || op->ntype == AND || op->ntype == OR) {
@@ -489,20 +556,22 @@ inline struct ir_seg expression_translator_3(struct node *exp, struct operand *p
 	if (exp->children[1]->ntype == DOT) {
 		struct node *struc = exp->children[0];
 		struct node *field_id = exp->children[2];
-		struct var_list *field = search_field(field_id->lattr.info, exp->p_sattr->type);
+		struct var_list *field = search_field(field_id->lattr.info, struc->p_sattr->type);
 		struct operand *base_addr = new_addr(struc->p_sattr->type);
-		struct value offset_val = {.i_val = field->offset};
-		struct operand *offset = new_const(get_int_type(), offset_val);
+		struct operand *offset = new_int_const(field->offset);
+
 		ir_seg_append_seg(&seg, expression_translator(struc, base_addr));
-		if (field->type->kind == TYPE_BASIC) {
-			/* Dereference can be exceuted. */
-			struct operand *var_addr = new_addr(field->type);
+
+		if (place->type == OPERAND_TEMP) {
+			/* Dereference should be exceuted. */
+			assert(exp->p_sattr->type->kind == TYPE_BASIC);
+			struct operand *var_addr = new_addr(exp->p_sattr->type);
 			ir_seg_create_ir(&seg, IR_PLUS, base_addr, offset, var_addr);
 			ir_seg_create_ir(&seg, IR_LOAD, var_addr, NULL, place);
 		} else {
 			ir_seg_create_ir(&seg, IR_PLUS, base_addr, offset, place);
 		}
-		
+
 		return seg;
 	}
 
@@ -515,7 +584,7 @@ inline struct ir_seg expression_translator_3(struct node *exp, struct operand *p
 	assert(0);
 }
 
-inline struct ir_seg expression_translator_4(struct node *exp, struct operand *place)
+struct ir_seg expression_translator_4(struct node *exp, struct operand *place)
 {
 	struct ir_seg seg = {0};
 	/* Exp -> ID LP Args RP */
@@ -531,20 +600,21 @@ inline struct ir_seg expression_translator_4(struct node *exp, struct operand *p
 
 		struct operand *base_addr = new_addr(arr->p_sattr->type);
 		struct operand *tmp_idx = new_temp(get_int_type());
-		struct value elem_size_val = {.i_val = exp->p_sattr->type->size};
-		struct operand *elem_size = new_const(get_int_type(), elem_size_val);
+		struct operand *elem_size = new_int_const(exp->p_sattr->type->size);
 		struct operand *offset = new_temp(get_int_type());
 
 		ir_seg_append_seg(&seg, expression_translator(arr, base_addr));
 		ir_seg_append_seg(&seg, expression_translator(idx, tmp_idx));
 		ir_seg_create_ir(&seg, IR_MULTIPLY, tmp_idx, elem_size, offset);
 		
-		if (exp->p_sattr->type == TYPE_BASIC) {
-			/* Dereference can be exceuted. */
+		if (place->type == OPERAND_TEMP) {
+			/* Dereference should be exceuted. */
+			assert(exp->p_sattr->type->kind == TYPE_BASIC);
 			struct operand *var_addr = new_addr(exp->p_sattr->type);
 			ir_seg_create_ir(&seg, IR_PLUS, base_addr, offset, var_addr);
 			ir_seg_create_ir(&seg, IR_LOAD, var_addr, NULL, place);
 		} else {
+			/* Just return an addr. */
 			ir_seg_create_ir(&seg, IR_PLUS, base_addr, offset, place);
 		}
 
@@ -583,7 +653,11 @@ struct ir_seg function_call_translator(struct node *exp, struct operand *place)
 	while (true) {
 		/* Args-> Exp COMMA Args */
 		struct node *arg = args->children[0];
-		struct operand *tmp = new_temp(arg->p_sattr->type);
+		struct operand *tmp;
+		if (arg->p_sattr->type->kind == TYPE_BASIC)
+			tmp = new_temp(arg->p_sattr->type);
+		else
+			tmp = new_addr(arg->p_sattr->type);
 		struct arg_temp_list *list_node = malloc(sizeof(struct arg_temp_list));
 		ir_seg_append_seg(&seg, expression_translator(arg, tmp));
 		list_node->arg = tmp;
@@ -625,10 +699,10 @@ struct ir_seg condition_translator(struct node *exp, struct operand *label_true,
 {
 	struct ir_seg seg = {0};
 	struct exp_attr *attr = exp->p_sattr;
-	if (exp->children[0]->ntype == NOT) {
+	if (exp->nr_children == 2 && exp->children[0]->ntype == NOT) {
 		/* Exp -> NOT Exp */
-		condition_translator(exp->children[1], label_false, label_true);
-	} else if (exp->children[1]->ntype == RELOP) {
+		ir_seg_append_seg(&seg, condition_translator(exp->children[1], label_false, label_true));
+	} else if (exp->nr_children == 3 && exp->children[1]->ntype == RELOP) {
 		/* Exp -> Exp RELOP Exp */
 		struct node *exp1 = exp->children[0];
 		struct node *op = exp->children[1];
@@ -640,12 +714,12 @@ struct ir_seg condition_translator(struct node *exp, struct operand *label_true,
 		ir_seg_append_seg(&seg, expression_translator(exp2, t2));
 		ir_seg_create_ir(&seg, rel_type, t1, t2, label_true);
 		ir_seg_append_ir(&seg, get_ir_goto(label_false));
-	} else if (exp->children[1]->ntype == AND) {
+	} else if (exp->nr_children == 3 && exp->children[1]->ntype == AND) {
 		struct operand *label = new_label();
 		ir_seg_append_seg(&seg, condition_translator(exp->children[0], label, label_false));
 		ir_seg_append_ir(&seg, get_ir_label(label));
 		ir_seg_append_seg(&seg, condition_translator(exp->children[2], label_true, label_false));
-	} else if (exp->children[1]->ntype == OR) {
+	} else if (exp->nr_children == 3 && exp->children[1]->ntype == OR) {
 		struct operand *label = new_label();
 		ir_seg_append_seg(&seg, condition_translator(exp->children[0], label_true, label));
 		ir_seg_append_ir(&seg, get_ir_label(label));
@@ -683,10 +757,10 @@ void operand_set_buf(char *buf, struct operand *op)
 		sprintf(buf, "temp%d", op->no);
 		return;
 	case OPERAND_VAR:
-		sprintf(buf, "var%d", op->no);
+		sprintf(buf, "var%d", op->no < 0 ? -op->no : op->no);
 		return;
 	case OPERAND_ADDR:
-		sprintf(buf, "addr%d", op->no);
+		sprintf(buf, "addr%d", op->no < 0 ? -op->no : op->no);
 		return;
 	case OPERAND_DUMMY:
 		strcpy(buf, "BAD");

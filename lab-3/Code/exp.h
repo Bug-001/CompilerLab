@@ -39,7 +39,7 @@ struct value {
 struct symbol {
 	struct object obj;
 	struct type *type;
-	int var_no;	// for IR generator
+	int var_no;	// for IR generator, if negative then it's an addr
 };
 
 // struct arithmetic {

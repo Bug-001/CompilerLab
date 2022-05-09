@@ -13,7 +13,7 @@ static struct symbol_table {
 
 static struct symbol_table *cur_table = &symbol_table_stack;
 
-static int sym_no = 0;
+static int sym_no = 1;
 
 struct symbol *search_symbol(const char *id)
 {

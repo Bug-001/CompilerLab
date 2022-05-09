@@ -2,6 +2,7 @@
 #include "ir.h"
 #include "node.h"
 #include "semantic.h"
+#include "syntax.tab.h"
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,8 +19,8 @@ int main(int argc, char **argv)
 	if (argc == 1) {
 		fatal_error("no input file");
 		goto terminated;
-	} else if (argc > 2) {
-		fatal_error("only support one input file");
+	} else if (argc > 3) {
+		fatal_error("usage: parser in.cmm [out.ir]");
 		goto terminated;
 	}
 	FILE *f = fopen(argv[1], "r");
@@ -43,9 +44,14 @@ int main(int argc, char **argv)
 #endif
 
 #ifdef LAB_3
-	print_ir(stdout);
-	FILE *ir_out = fopen("out.ir", "wt");
+	FILE *ir_out;
+	if (argc == 2)
+		ir_out = stdout;
+	else
+		ir_out = fopen(argv[2], "wt");
 	print_ir(ir_out);
+	FILE *fp_out = fopen("out.ir", "wt");
+	print_ir(fp_out);
 #endif
 
 	return 0;
