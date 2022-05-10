@@ -23,9 +23,9 @@ bool unfold_inplace(struct ir *ir)
         /* e.g., x := &temp1 */
         struct operand *temp1 = ir->op1;
         if (!(temp1->type == OPERAND_TEMP || temp1->type == OPERAND_ADDR))
-                return false;
+                goto op2_unfold;
         if (!temp1->can_fold)
-                return false;
+                goto op2_unfold;
         struct ir *temp1_dec = temp1->dec;
         if (temp1_dec->type == IR_ASSIGN) {
                 /* temp1 := y */
@@ -37,6 +37,7 @@ bool unfold_inplace(struct ir *ir)
                 changed = true;
         }
 
+op2_unfold:
         if (!ir->op2)
                 return changed;
         struct operand *temp2 = ir->op2;
@@ -150,7 +151,119 @@ bool unfold_assign(struct ir *assign)
 
 bool unfold_arithmetic(struct ir *arith)
 {
-        return false;
+        /* x := y + z */
+        struct operand *y = arith->op1;
+        struct operand *z = arith->op2;
+        if (y->type == OPERAND_CONST && z->type == OPERAND_CONST) {
+                // XXX: only consider integer value.
+                int y_val = y->val.i_val;
+                int z_val = z->val.i_val;
+                if (arith->type == IR_PLUS) {
+                        arith->op1 = new_int_const(y_val + z_val);
+                } else if (arith->type == IR_MINUS) {
+                        arith->op1 = new_int_const(y_val - z_val);
+                } else if (arith->type == IR_MULTIPLY) {
+                        arith->op1 = new_int_const(y_val * z_val);
+                } else if (arith->type == IR_DIVIDE) {
+                        if (z_val == 0)
+                                // Leave this bullshit to irsim!
+                                return false;
+                        arith->op1 = new_int_const(y_val / z_val);
+                } else  {
+                        assert(0);
+                }
+                free(y);
+                free(z);
+                arith->op2 = NULL;
+                arith->type = IR_ASSIGN;
+                return true;
+        }
+        if (y->type != OPERAND_CONST && z->type != OPERAND_CONST)
+                // Really no way to optimize.
+                return false;
+        /* x := y + c     x := c + z */
+        // Do some math tricks...
+        struct operand *c = y->type == OPERAND_CONST ? y : z;
+        struct operand *nc = y->type != OPERAND_CONST ? y : z;
+        if (arith->type == IR_PLUS) {
+                if (c->val.i_val == 0) {
+                        /* x := nc + #0 -> x := nc */
+                        arith->type = IR_ASSIGN;
+                        arith->op1 = nc;
+                        arith->op2 = NULL;
+                        free(c);
+                        return true;
+                }
+        } else if (arith->type == IR_MULTIPLY) {
+                if (c->val.i_val == 0) {
+                        /* x := nc * #0 -> x := 0 */
+                        arith->type = IR_ASSIGN;
+                        arith->op1 = new_int_const(0);
+                        arith->op2 = NULL;
+                        nc->ref_count--;
+                        free(c);
+                        return true;
+                }
+                if (c->val.i_val == 1) {
+                        /* x := nc * #1 -> x := nc */
+                        arith->type = IR_ASSIGN;
+                        arith->op1 = nc;
+                        arith->op2 = NULL;
+                        free(c);
+                        return true;
+                }
+        } else if (arith->type == IR_DIVIDE) {
+                if (z == c && z->val.i_val == 1) {
+                        /* x := y / #1 -> x := y */
+                        arith->type = IR_ASSIGN;
+                        arith->op1 = nc;
+                        arith->op2 = NULL;
+                        free(z);
+                        return true;
+                }
+        } else if (arith->type == IR_MINUS) {
+                if (z == c && z->val.i_val == 0) {
+                        /* x := y - #0 -> x := y */
+                        arith->type = IR_ASSIGN;
+                        arith->op1 = nc;
+                        arith->op2 = NULL;
+                        free(z);
+                        return true;
+                }
+        } else {
+                assert(0);
+        }
+        // Math tricks failed? Try more aggressive ways...
+        /* x := nc + c1, nc := w + c2 -> x := w + val(c1+c2) */
+        if (!nc->can_fold)
+                return false;
+        struct ir *nc_dec = nc->dec;
+        if (nc_dec->type != arith->type)
+                return false;
+        if (nc_dec->type != IR_PLUS && nc_dec->type != IR_MULTIPLY)
+                return false;
+        struct operand *c1 = c;
+        struct operand *c2 = NULL;
+        struct operand *w = NULL;
+        if (nc_dec->op1->type == OPERAND_CONST) {
+                c2 = nc_dec->op1;
+                w = nc_dec->op2;
+        } else if (nc_dec->op2->type == OPERAND_CONST) {
+                w = nc_dec->op1;
+                c2 = nc_dec->op2;
+        }
+        if (!c2)
+                return false;
+        struct operand *new_c;
+        if (nc_dec->type == IR_PLUS)
+                new_c = new_int_const(c1->val.i_val + c2->val.i_val);
+        else
+                new_c = new_int_const(c1->val.i_val * c2->val.i_val);
+        arith->op1 = w;
+        arith->op2 = new_c;
+        nc->ref_count--;
+        w->ref_count++;
+        return true;
 }
 
 bool inverse_label(struct ir *jc)
@@ -265,7 +378,7 @@ bool __optimize()
                                 cur = cur->next;
                         break;
                 case IR_DEC:
-                        if (cur->res->type == TYPE_BASIC) {
+                        if (cur->res->value_type->kind == TYPE_BASIC) {
                                 cur = delete_ir(cur);
                                 changed = true;
                         } else
@@ -278,6 +391,10 @@ bool __optimize()
                         }
                         if (cur->next->type == IR_LABEL && cur->op1->no == cur->next->res->no) {
                                 cur->next->res->ref_count--;
+                                cur = delete_ir(cur);
+                                changed = true;
+                        } else if (cur->prev->type == IR_RETURN) {
+                                cur->op1->ref_count--;
                                 cur = delete_ir(cur);
                                 changed = true;
                         } else

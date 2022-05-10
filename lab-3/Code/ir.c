@@ -230,7 +230,6 @@ struct ir *get_ir_label(struct operand *label)
 struct ir *get_ir_goto(struct operand *label)
 {
 	struct ir *new_ir = get_ir(IR_GOTO, label, NULL, NULL);
-	label->ref_count++;
 	return new_ir;
 }
 
