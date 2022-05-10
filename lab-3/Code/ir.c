@@ -163,20 +163,16 @@ struct ir *get_ir(enum ir_type type, struct operand *op1,
 
 	new_ir->prev = NULL;
 	new_ir->next = NULL;
-	new_ir->addr_cnt = 0;
 
 	/* Add dec or ref_count */
 	if (op1) {
 		op1->ref_count++;
-		new_ir->addr_cnt++;
 	}
 	if (op2) {
 		op2->ref_count++;
-		new_ir->addr_cnt++;
 	}
 	if (res) {
-		new_ir->addr_cnt++;
-		if (is_if_goto(type)) res->ref_count++;
+		if (is_if_goto(type) || type == IR_STORE) res->ref_count++;
 		else if (!res->dec) res->dec = new_ir;
 		else res->can_fold = false;
 	}

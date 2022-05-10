@@ -69,7 +69,6 @@ enum ir_type {
 
 struct ir {
 	enum ir_type type;
-	int addr_cnt;
 	struct operand *op1;
 	struct operand *op2;
 	struct operand *res;
@@ -80,6 +79,8 @@ struct ir_seg {
 	struct ir *head;
 	struct ir *tail;
 };
+
+struct operand *new_int_const(int i_val);
 
 void function_translator(struct node *ext_def, struct func *func);
 
