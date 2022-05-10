@@ -512,11 +512,13 @@ struct ir_seg assignment_translator(struct node *dst, struct node *src, struct o
 			ir_seg_create_ir(&seg, IR_PLUS, offset, step, offset);
 			ir_seg_append_ir(&seg, get_ir_goto(label1));
 			ir_seg_append_ir(&seg, get_ir_label(label2));
+			ir_seg_create_ir(&seg, IR_ASSIGN, dst_op, NULL, place);
 		} else {
 			/* Store into the mem space pointed by dst. */
 			src_op = new_temp(src_type);
 			ir_seg_append_seg(&seg, expression_translator(src, src_op));
 			ir_seg_create_ir(&seg, IR_STORE, src_op, NULL, dst_op);
+			ir_seg_create_ir(&seg, IR_LOAD, dst_op, NULL, place);
 		}
 	} else {
 		/* Store directly into variable dst. */
@@ -527,9 +529,8 @@ struct ir_seg assignment_translator(struct node *dst, struct node *src, struct o
 		 */
 		ir_seg_append_seg(&seg, expression_translator(src, src_op));
 		ir_seg_create_ir(&seg, IR_ASSIGN, src_op, NULL, dst_op);
+		ir_seg_create_ir(&seg, IR_ASSIGN, dst_op, NULL, place);
 	}
-
-	ir_seg_create_ir(&seg, IR_ASSIGN, src_op, NULL, place);
 
 	return seg;
 }

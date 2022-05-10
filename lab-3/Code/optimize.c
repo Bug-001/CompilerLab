@@ -1,4 +1,5 @@
 #include "ir.h"
+#include "prototype.h"
 #include <assert.h>
 #include <stdlib.h>
 
@@ -14,128 +15,53 @@ struct ir *delete_ir(struct ir *del)
         return ret;
 }
 
-// if cond is true, then return delete_ir(del);
-// else return del->next
-struct ir *delete_ir_if(struct ir *del, bool cond)
-{
-        if (cond) return delete_ir(del);
-        return del->next;
-}
-
-void unfold_op1(struct ir *ir);
-void addr_1_folding(struct ir *cur);
-void addr_2_folding(struct ir *cur);
-void addr_3_folding(struct ir *cur);
-
-void unfold_op1(struct ir *ir)
-{
-        /*
-         * e.g.:
-         * temp := x
-         * RETURN temp
-         */
-        if (ir->op1->type == OPERAND_CONST)
-                // Could not unfold more.
-                return;
-        // temp := x
-        struct ir *temp_dec = ir->op1->dec;
-        if (!temp_dec->res->can_fold)
-                return;
-        if (temp_dec->type == IR_ASSIGN) {
-                // RETURN temp -> RETURN x
-                ir->op1 = temp_dec->op1;
-                // temp ref_count--
-                temp_dec->res->ref_count--;
-                // x ref_count++
-                ir->op1->ref_count++;
-                unfold_op1(ir);
-        }
-}
-
-
-
-void addr_1_folding(struct ir *cur)
-{
-        switch (cur->type) {
-        case IR_RETURN:
-        case IR_ARG:
-        case IR_WRITE:
-                unfold_op1(cur);
-                break;
-        default:
-                break;
-        }
-}
-
-void addr_2_folding(struct ir *cur)
-{
-        struct ir *temp_dec;
-        switch (cur->type) {
-        case IR_ASSIGN:
-                // x := temp
-                if (cur->op1->type == OPERAND_CONST)
-                        break;
-                temp_dec = cur->op1->dec;
-                if (!temp_dec->res->can_fold)
-                        break;
-                if (temp_dec->type == IR_ASSIGN || temp_dec->type == IR_REF || temp_dec->type == IR_LOAD) {
-                        // eliminate unit assign
-                        // temp := y
-                        // x := temp -> x := y
-                        cur->op1 = temp_dec->op1;
-                        cur->type = temp_dec->type;
-                        // temp ref_count--
-                        temp_dec->res->ref_count--;
-                        // x ref_count++
-                        cur->op1->ref_count++;
-                        addr_2_folding(cur);
-                } else if (temp_dec->type == IR_READ) {
-                        // READ temp -> temp := 0
-                        // x := temp -> READ x
-                        if (temp_dec->res->ref_count > 1)
-                                // READ temp1
-                                // temp2 := temp1
-                                // x := temp1
-                                // temp1 should not be optimized
-                                break;
-                        temp_dec->type = IR_ASSIGN;
-                        temp_dec->op1 = new_int_const(0);
-                        cur->type = IR_READ;
-                        cur->op1->ref_count--;
-                        cur->op1 = NULL;
-                }
-                break;
-        case IR_REF:
-        case IR_LOAD:
-        case IR_STORE:
-                break;
-        }
-}
-
-void addr_3_folding(struct ir *cur)
-{
-
-}
-
-void (*addr_folding[4])(struct ir *) = {
-        NULL, addr_1_folding, addr_2_folding, addr_3_folding
-};
-
-void peephole_optimization(struct ir *cur)
-{
-
-}
-
 bool unfold_inplace(struct ir *ir)
 {
-        return false;
+        bool changed = false;
+
+        assert(ir->op1);
+        /* e.g., x := &temp1 */
+        struct operand *temp1 = ir->op1;
+        if (!(temp1->type == OPERAND_TEMP || temp1->type == OPERAND_ADDR))
+                return false;
+        if (!temp1->can_fold)
+                return false;
+        struct ir *temp1_dec = temp1->dec;
+        if (temp1_dec->type == IR_ASSIGN) {
+                /* temp1 := y */
+                struct operand *y = temp1_dec->op1;
+                ir->op1 = y;
+                temp1->ref_count--;
+                y->ref_count++;
+                unfold_inplace(ir);
+                changed = true;
+        }
+
+        if (!ir->op2)
+                return changed;
+        struct operand *temp2 = ir->op2;
+        if (!(temp2->type == OPERAND_TEMP || temp2->type == OPERAND_ADDR))
+                return false;
+        if (!temp2->can_fold)
+                return false;
+        struct ir *temp2_dec = temp2->dec;
+        if (temp2_dec->type == IR_ASSIGN) {
+                /* temp2 := y */
+                struct operand *y = temp2_dec->op1;
+                ir->op2 = y;
+                temp2->ref_count--;
+                y->ref_count++;
+                unfold_inplace(ir);
+                changed = true;
+        }
+
+        return changed;
 }
 
 bool unfold_assign(struct ir *assign)
 {
         /* assign IR: x := temp */
         /* assign->op1 == temp, assign->res == x */
-        struct operand *x = assign->res;
         struct operand *temp = assign->op1;
         if (!(temp->type == OPERAND_TEMP || temp->type == OPERAND_ADDR))
                 return false;
@@ -227,14 +153,48 @@ bool unfold_arithmetic(struct ir *arith)
         return false;
 }
 
-bool unfold_dec(struct ir *dec)
-{
-        return false;
-}
-
 bool inverse_label(struct ir *jc)
 {
-        return false;
+        /* IF x op y GOTO label1 - jc */
+        /* GOTO label2 - jmp */
+        /* LABEL label1 : - another_label1 */
+        /* Try to get another label1 */
+        if (!jc->next || !jc->next->next)
+                return false;
+        struct ir *jmp = jc->next;
+        struct ir *another_label1 = jmp->next;
+        if (jmp->type != IR_GOTO || another_label1->type != IR_LABEL)
+                return false;
+        struct operand *label1 = jc->res;
+        if (label1->no != another_label1->res->no)
+                return false;
+        // inverse jcc
+        struct operand *label2 = jmp->op1;
+        jc->res = label2;
+        jmp->op1 = label1;
+        switch (jc->type) {
+        case IR_IF_LT_GOTO:
+                jc->type = IR_IF_GE_GOTO;
+                break;
+        case IR_IF_GT_GOTO:
+                jc->type = IR_IF_LE_GOTO;
+                break;
+        case IR_IF_LE_GOTO:
+                jc->type = IR_IF_GT_GOTO;
+                break;
+        case IR_IF_GE_GOTO:
+                jc->type = IR_IF_LT_GOTO;
+                break;
+        case IR_IF_EQ_GOTO:
+                jc->type = IR_IF_NE_GOTO;
+                break;
+        case IR_IF_NE_GOTO:
+                jc->type = IR_IF_EQ_GOTO;
+                break;
+        default:
+                assert(0);
+        }
+        return true;
 }
 
 bool __optimize()
@@ -252,6 +212,7 @@ bool __optimize()
                 case IR_MINUS:
                 case IR_MULTIPLY:
                 case IR_DIVIDE:
+                        changed |= unfold_inplace(cur);
                         changed |= unfold_arithmetic(cur);
                         break;
                 case IR_REF:
@@ -262,16 +223,13 @@ bool __optimize()
                 case IR_WRITE:
                         changed |= unfold_inplace(cur);
                         break;
-                case IR_READ:
-                case IR_CALL:
-                        changed |= unfold_dec(cur);
-                        break;
 	        case IR_IF_LT_GOTO:
 	        case IR_IF_GT_GOTO:
 	        case IR_IF_LE_GOTO:
 	        case IR_IF_GE_GOTO:
 	        case IR_IF_EQ_GOTO:
 	        case IR_IF_NE_GOTO:
+                        changed |= unfold_inplace(cur);
                         changed |= inverse_label(cur);
                         break;
                 default:
@@ -307,7 +265,7 @@ bool __optimize()
                                 cur = cur->next;
                         break;
                 case IR_DEC:
-                        if (cur->op1->val.i_val == 4) {
+                        if (cur->res->type == TYPE_BASIC) {
                                 cur = delete_ir(cur);
                                 changed = true;
                         } else
@@ -318,7 +276,8 @@ bool __optimize()
                                 cur = cur->next;
                                 break;
                         }
-                        if (cur->op1->no == cur->next->res->no) {
+                        if (cur->next->type == IR_LABEL && cur->op1->no == cur->next->res->no) {
+                                cur->next->res->ref_count--;
                                 cur = delete_ir(cur);
                                 changed = true;
                         } else
