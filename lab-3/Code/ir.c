@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern int translate_fail;
+
 struct ir ir_list = { .type = IR_DUMMY, .prev = NULL, .next = NULL };
 struct ir *ir_tail = &ir_list;
 
@@ -52,6 +54,29 @@ struct operand *new_temp(struct type *type)
 
 struct operand *new_var(struct type *sym_type, int sym_no)
 {
+#ifndef LAB_3_1
+	static bool struct_failed = false;
+	if (!struct_failed && sym_type->kind == TYPE_STRUCT) {
+		struct_failed = true;
+		printf("Translate failed: Code contains variables or parameters of structure type.\n");
+		translate_fail = true;
+	}
+#endif
+#ifndef LAB_3_2
+	static bool ndarray_failed = false;
+	if (!ndarray_failed && sym_type->kind == TYPE_ARRAY && sym_type->elem->kind == TYPE_ARRAY) {
+		ndarray_failed = true;
+		printf("Translate failed: Code contains variables of multi-dimensional array type.\n");
+		translate_fail = true;
+	}
+	static bool array_arg_failed = false;
+	if (!array_arg_failed && sym_type->kind == TYPE_ARRAY && sym_no < 0) {
+		array_arg_failed = true;
+		printf("Translate failed: Code contains variables of parameters of array type.\n");
+		translate_fail = true;
+	}
+#endif
+
 	// TODO: var array
 	static struct operand *var_cache[100000];
 

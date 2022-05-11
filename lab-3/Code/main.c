@@ -13,6 +13,7 @@ extern void yyrestart(FILE *input_file);
 #define fatal_error(info) printf("%s: fatal error: %s\n", argv[0], (info))
 
 int has_error = 0;
+int translate_fail = 0;
 
 int main(int argc, char **argv)
 {
@@ -39,7 +40,7 @@ int main(int argc, char **argv)
 #else
 	has_error = 0;
 	semantic_analysis(tree);
-	if (has_error)
+	if (has_error || translate_fail)
 		goto out;
 	optimize();
 #endif
@@ -51,8 +52,8 @@ int main(int argc, char **argv)
 	else
 		ir_out = fopen(argv[2], "wt");
 	print_ir(ir_out);
-	FILE *fp_out = fopen("out.ir", "wt");
-	print_ir(fp_out);
+	// FILE *fp_out = fopen("out.ir", "wt");
+	// print_ir(fp_out);
 #endif
 
 	return 0;
