@@ -3,7 +3,8 @@
 ```shell
 cd Code
 make
-./parser ../Test/test1.cmm
+./parser in.cmm [out.ir]
 ```
+如果`out.ir`留空，中间代码会输出到stdout。
 
 实验报告参见[report.md](Resource/report.md)。
