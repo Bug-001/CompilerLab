@@ -307,14 +307,10 @@ gen_asm:
 		}
 		print_asm("lw $ra, 0($sp)");
 		int nr_store_arg_reg = nr_param > 4 ? 4 : nr_param;
-		if (nr_store_arg_reg > 0 && res->reg_no == REG_A0) {
-			print_asm("sw $v0, %d($sp)", (1 + nr_additional_args) * 4);
-		} else {
-			print_asm("move %s, $v0", regres);
-		}
 		for (int i = 0; i < nr_store_arg_reg; ++i) {
 			print_asm("lw %s, %d($sp)", reg_name[REG_A0 + i], (1 + nr_additional_args + i) * 4);
 		}
+		print_asm("move %s, $v0", regres);
 		print_asm("add $sp, $sp, %d", (1 + nr_additional_args + nr_store_arg_reg) * 4);
 		nr_additional_args = 0;
 		arg_count = 0;
