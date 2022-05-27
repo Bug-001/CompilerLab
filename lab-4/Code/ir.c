@@ -1,3 +1,4 @@
+#include "asm.h"
 #include "config.h"
 #include "exp.h"
 #include "ir.h"
@@ -41,6 +42,7 @@ struct operand *new_operand(enum operand_type type, int no)
 	ret->dec = NULL;
 	ret->ref_count = 0;
 	ret->can_fold = true;
+	ret->alloc_type = REG_UNALLOC;
 	return ret;
 }
 
@@ -260,11 +262,8 @@ struct ir *get_ir_goto(struct operand *label)
 
 struct ir *get_ir_def_func(struct func *func)
 {
-	struct operand *op_func = malloc(sizeof(struct operand));
-	op_func->type = OPERAND_FUNC;
+	struct operand *op_func = new_operand(OPERAND_FUNC, 0);
 	op_func->func = func;
-	op_func->ref_count = 0;
-
 	if (strcmp(func->obj.id, "main") == 0) {
 		op_func->ref_count = 1;
 	}

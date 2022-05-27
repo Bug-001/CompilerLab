@@ -1,6 +1,7 @@
 #ifndef IR_H
 #define IR_H
 
+#include "asm.h"
 #include "exp.h"
 #include "prototype.h"
 #include <stdio.h>
@@ -27,6 +28,9 @@ struct operand {
 		struct {
 			struct type *value_type;
 			struct value val;
+			enum alloc_type alloc_type;
+			int mem_loc;
+			enum reg_type reg_no;
 		};
 	};
 	struct ir *dec;

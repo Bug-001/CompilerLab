@@ -1,12 +1,12 @@
 {
-    "makefile.makefilePath": "lab-3/Code/Makefile",
+    "makefile.makefilePath": "lab-4/Code/Makefile",
     "makefile.launchConfigurations": [
         {
-            "cwd": "/home/sht/Desktop/Course/2021-2/CompilerLab/compiler-principle/lab-3/Code",
-            "binaryPath": "/home/sht/Desktop/Course/2021-2/CompilerLab/compiler-principle/lab-3/Code/parser",
+            "cwd": "/home/sht/Desktop/Course/2021-2/CompilerLab/compiler-principle/lab-4/Code",
+            "binaryPath": "/home/sht/Desktop/Course/2021-2/CompilerLab/compiler-principle/lab-4/Code/parser",
             "binaryArgs": ["../Test/test3.cmm"]
         }
     ],
-    "makefile.makeDirectory": "lab-3/Code",
+    "makefile.makeDirectory": "lab-4/Code",
     "editor.tabSize": 8
 }

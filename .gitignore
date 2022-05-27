@@ -14,3 +14,4 @@ __pycache__
 archive
 *.log
 out.ir
+out.s

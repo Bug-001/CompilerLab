@@ -1,3 +1,4 @@
+#include "config.h"
 #include "ir.h"
 #include "prototype.h"
 #include <assert.h>
@@ -378,11 +379,15 @@ bool __optimize()
                                 cur = cur->next;
                         break;
                 case IR_DEC:
+#ifndef LAB_4
                         if (cur->res->value_type->kind == TYPE_BASIC) {
                                 cur = delete_ir(cur);
                                 changed = true;
                         } else
                                 cur = cur->next;
+#else
+                        cur = cur->next;
+#endif
                         break;
                 case IR_GOTO:
                         if (!cur->next) {

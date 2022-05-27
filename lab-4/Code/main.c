@@ -1,3 +1,4 @@
+#include "asm.h"
 #include "config.h"
 #include "ir.h"
 #include "node.h"
@@ -34,16 +35,17 @@ int main(int argc, char **argv)
 	yyparse();
 	if (has_error)
 		goto out;
+
 #ifdef LAB_1
 	print_tree(tree);
-	goto out;
-#else
+	return 0;
+#endif
+
 	has_error = 0;
 	semantic_analysis(tree);
 	if (has_error || translate_fail)
 		goto out;
 	optimize();
-#endif
 
 #ifdef LAB_3
 	FILE *ir_out;
@@ -54,9 +56,22 @@ int main(int argc, char **argv)
 	print_ir(ir_out);
 	// FILE *fp_out = fopen("out.ir", "wt");
 	// print_ir(fp_out);
+	return 0;
 #endif
 
+#ifdef LAB_4
+#ifdef ASM_DEBUG
+	FILE *ir_out = fopen("out.ir", "wt");
+	print_ir(ir_out);
+#endif
+	FILE *asm_out;
+	if (argc == 2)
+		asm_out = stdout;
+	else
+		asm_out = fopen(argv[2], "wt");
+	generate(asm_out);
 	return 0;
+#endif
 
 terminated:
 	printf("compilation terminated.\n");
